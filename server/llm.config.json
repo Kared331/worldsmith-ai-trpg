@@ -1,0 +1,104 @@
+{
+  "activeProvider": "deepseek",
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKey": "",
+      "models": [
+        {
+          "id": "gpt-4o-mini",
+          "contextWindow": 128000
+        },
+        {
+          "id": "gpt-4o",
+          "contextWindow": 128000
+        },
+        {
+          "id": "text-embedding-3-small",
+          "contextWindow": 8191
+        }
+      ],
+      "capabilities": [
+        "chat",
+        "toolCalls",
+        "streaming",
+        "embeddings"
+      ]
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "apiKey": "${env:DEEPSEEK_API_KEY}",
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "contextWindow": 1000000
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "contextWindow": 1000000
+        }
+      ],
+      "capabilities": [
+        "chat",
+        "toolCalls",
+        "streaming"
+      ]
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "apiKey": "",
+      "models": [
+        {
+          "id": "claude-sonnet-4-20250514",
+          "contextWindow": 200000
+        },
+        {
+          "id": "claude-haiku-4-20250514",
+          "contextWindow": 200000
+        }
+      ],
+      "capabilities": [
+        "chat",
+        "toolCalls",
+        "streaming"
+      ]
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama (本地)",
+      "baseUrl": "http://localhost:11434/v1",
+      "apiKey": "",
+      "models": [
+        {
+          "id": "qwen2.5:14b",
+          "contextWindow": 32768
+        },
+        {
+          "id": "llama3.1:8b",
+          "contextWindow": 128000
+        }
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ]
+    }
+  ],
+  "roleMapping": {
+    "gm": "deepseek/deepseek-v4-flash",
+    "character": "deepseek/deepseek-v4-flash",
+    "compressor": "deepseek/deepseek-v4-flash",
+    "embedding": "deepseek/deepseek-v4-flash"
+  },
+  "defaults": {
+    "temperature": 0.7,
+    "maxTokens": 2048,
+    "streaming": true
+  }
+}

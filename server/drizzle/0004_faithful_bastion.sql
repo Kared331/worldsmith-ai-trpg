@@ -1,0 +1,1 @@
+ALTER TABLE `conversations` ADD `extracted_through` text;

@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="Segoe UI, system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0f0f1a"/>
+    </linearGradient>
+    <filter id="glow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="900" height="520" fill="url(#bg2)" rx="12"/>
+
+  <!-- Title -->
+  <text x="450" y="38" text-anchor="middle" fill="#f59e0b" font-size="20" font-weight="700" letter-spacing="2">TECH STACK</text>
+  <line x1="300" y1="50" x2="600" y2="50" stroke="#f59e0b" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- ==================== FRONTEND ==================== -->
+  <rect x="40" y="68" width="260" height="430" rx="10" fill="#0f172a" filter="url(#glow)" stroke="#3b82f6" stroke-width="1.5" stroke-opacity="0.4"/>
+  <text x="170" y="96" text-anchor="middle" fill="#60a5fa" font-size="15" font-weight="700" letter-spacing="1">FRONTEND</text>
+
+  <!-- React -->
+  <rect x="60" y="112" width="220" height="48" rx="6" fill="#1e293b" stroke="#61dafb" stroke-width="1" stroke-opacity="0.3"/>
+  <circle cx="82" cy="136" r="12" fill="none" stroke="#61dafb" stroke-width="1.5"/>
+  <text x="82" y="140" text-anchor="middle" fill="#61dafb" font-size="11" font-weight="700">R</text>
+  <text x="100" y="133" fill="#e2e8f0" font-size="12" font-weight="600">React 18</text>
+  <text x="100" y="148" fill="#64748b" font-size="9">SPA | Hooks | 组件化 UI</text>
+
+  <!-- Vite -->
+  <rect x="60" y="170" width="220" height="48" rx="6" fill="#1e293b" stroke="#646cff" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="82" y="198" text-anchor="middle" fill="#646cff" font-size="14" font-weight="700">V</text>
+  <text x="100" y="191" fill="#e2e8f0" font-size="12" font-weight="600">Vite 5</text>
+  <text x="100" y="206" fill="#64748b" font-size="9">HMR | ESM | 快速构建</text>
+
+  <!-- TypeScript -->
+  <rect x="60" y="228" width="220" height="48" rx="6" fill="#1e293b" stroke="#3178c6" stroke-width="1" stroke-opacity="0.3"/>
+  <rect x="68" y="238" width="20" height="20" rx="3" fill="#3178c6"/>
+  <text x="78" y="253" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">TS</text>
+  <text x="100" y="249" fill="#e2e8f0" font-size="12" font-weight="600">TypeScript 5.6</text>
+  <text x="100" y="264" fill="#64748b" font-size="9">严格模式 | 类型安全</text>
+
+  <!-- Tailwind -->
+  <rect x="60" y="286" width="220" height="48" rx="6" fill="#1e293b" stroke="#06b6d4" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="82" y="314" text-anchor="middle" fill="#06b6d4" font-size="12" font-weight="700">Tw</text>
+  <text x="100" y="307" fill="#e2e8f0" font-size="12" font-weight="600">Tailwind CSS 3.4</text>
+  <text x="100" y="322" fill="#64748b" font-size="9">原子化 CSS | CVA | 暗色主题</text>
+
+  <!-- Zustand -->
+  <rect x="60" y="344" width="220" height="48" rx="6" fill="#1e293b" stroke="#f97316" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="82" y="372" text-anchor="middle" fill="#f97316" font-size="12" font-weight="700">Z</text>
+  <text x="100" y="365" fill="#e2e8f0" font-size="12" font-weight="600">Zustand</text>
+  <text x="100" y="380" fill="#64748b" font-size="9">全局状态 | 细粒度 selector</text>
+
+  <!-- Lucide -->
+  <rect x="60" y="402" width="105" height="40" rx="6" fill="#1e293b" stroke="#a855f7" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="112" y="427" text-anchor="middle" fill="#c4b5fd" font-size="11" font-weight="600">Lucide</text>
+
+  <!-- Zod -->
+  <rect x="175" y="402" width="105" height="40" rx="6" fill="#1e293b" stroke="#22c55e" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="227" y="427" text-anchor="middle" fill="#86efac" font-size="11" font-weight="600">Zod</text>
+
+  <!-- World Map (SVG) -->
+  <rect x="60" y="452" width="220" height="30" rx="6" fill="#1e293b" stroke="#64748b" stroke-width="1" stroke-opacity="0.15"/>
+  <text x="170" y="472" text-anchor="middle" fill="#64748b" font-size="10">SVG 自绘地图 (弹窗式世界地图)</text>
+
+  <!-- ==================== BACKEND ==================== -->
+  <rect x="320" y="68" width="260" height="430" rx="10" fill="#1c1404" filter="url(#glow)" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.4"/>
+  <text x="450" y="96" text-anchor="middle" fill="#f59e0b" font-size="15" font-weight="700" letter-spacing="1">BACKEND</text>
+
+  <!-- Express -->
+  <rect x="340" y="112" width="220" height="48" rx="6" fill="#262010" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="362" y="140" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="700">Ex</text>
+  <text x="380" y="133" fill="#e2e8f0" font-size="12" font-weight="600">Express 4</text>
+  <text x="380" y="148" fill="#64748b" font-size="9">路由 | 中间件 | SSE</text>
+
+  <!-- TypeScript -->
+  <rect x="340" y="170" width="220" height="48" rx="6" fill="#262010" stroke="#3178c6" stroke-width="1" stroke-opacity="0.3"/>
+  <rect x="348" y="180" width="20" height="20" rx="3" fill="#3178c6"/>
+  <text x="358" y="195" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">TS</text>
+  <text x="380" y="191" fill="#e2e8f0" font-size="12" font-weight="600">TypeScript (ESM)</text>
+  <text x="380" y="206" fill="#64748b" font-size="9">类型安全 | 模块化</text>
+
+  <!-- Skills Engine -->
+  <rect x="340" y="228" width="220" height="48" rx="6" fill="#262010" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="362" y="256" text-anchor="middle" fill="#fcd34d" font-size="13" font-weight="700">Sk</text>
+  <text x="380" y="249" fill="#e2e8f0" font-size="12" font-weight="600">Skills Engine</text>
+  <text x="380" y="264" fill="#64748b" font-size="9">GM Function Calling | 确定性计算</text>
+
+  <!-- GM Agent -->
+  <rect x="340" y="286" width="220" height="48" rx="6" fill="#262010" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="362" y="314" text-anchor="middle" fill="#fcd34d" font-size="13" font-weight="700">GM</text>
+  <text x="380" y="307" fill="#e2e8f0" font-size="12" font-weight="600">GM Agent</text>
+  <text x="380" y="322" fill="#64748b" font-size="9">元层观察者 | 世界快照注入</text>
+
+  <!-- Memory -->
+  <rect x="340" y="344" width="220" height="48" rx="6" fill="#262010" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="362" y="372" text-anchor="middle" fill="#fcd34d" font-size="13" font-weight="700">Me</text>
+  <text x="380" y="365" fill="#e2e8f0" font-size="12" font-weight="600">Memory System</text>
+  <text x="380" y="380" fill="#64748b" font-size="9">后台提取 | 子串匹配 | 自动压缩</text>
+
+  <!-- Schemas -->
+  <rect x="340" y="402" width="105" height="40" rx="6" fill="#262010" stroke="#22c55e" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="392" y="427" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">Drizzle</text>
+
+  <rect x="455" y="402" width="105" height="40" rx="6" fill="#262010" stroke="#a855f7" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="507" y="427" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">pngjs</text>
+
+  <rect x="340" y="452" width="220" height="30" rx="6" fill="#262010" stroke="#64748b" stroke-width="1" stroke-opacity="0.15"/>
+  <text x="450" y="472" text-anchor="middle" fill="#64748b" font-size="10">dotenv | cors | better-sqlite3</text>
+
+  <!-- ==================== AI / DATA ==================== -->
+  <rect x="600" y="68" width="260" height="430" rx="10" fill="#0f172a" filter="url(#glow)" stroke="#22c55e" stroke-width="1.5" stroke-opacity="0.4"/>
+  <text x="730" y="96" text-anchor="middle" fill="#22c55e" font-size="15" font-weight="700" letter-spacing="1">AI &amp; DATA</text>
+
+  <!-- SQLite -->
+  <rect x="620" y="112" width="220" height="56" rx="6" fill="#1e293b" stroke="#22c55e" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="642" y="136" text-anchor="middle" fill="#86efac" font-size="13" font-weight="700">SQL</text>
+  <text x="660" y="130" fill="#e2e8f0" font-size="12" font-weight="600">SQLite</text>
+  <text x="660" y="145" fill="#64748b" font-size="9">better-sqlite3 | WAL 模式</text>
+  <text x="660" y="158" fill="#64748b" font-size="9">12 张表 | world_id 隔离</text>
+
+  <!-- Drizzle -->
+  <rect x="620" y="178" width="220" height="48" rx="6" fill="#1e293b" stroke="#22c55e" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="642" y="206" text-anchor="middle" fill="#86efac" font-size="13" font-weight="700">Dz</text>
+  <text x="660" y="199" fill="#e2e8f0" font-size="12" font-weight="600">Drizzle ORM</text>
+  <text x="660" y="214" fill="#64748b" font-size="9">类型安全查询 | 迁移管理</text>
+
+  <!-- OpenAI Compat -->
+  <rect x="620" y="240" width="220" height="56" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="642" y="264" text-anchor="middle" fill="#60a5fa" font-size="13" font-weight="700">AI</text>
+  <text x="660" y="258" fill="#e2e8f0" font-size="12" font-weight="600">OpenAI 兼容协议</text>
+  <text x="660" y="273" fill="#64748b" font-size="9">Chat | Tool Calls | Streaming</text>
+  <text x="660" y="286" fill="#64748b" font-size="9">Embeddings (兼容保留)</text>
+
+  <!-- Providers -->
+  <rect x="620" y="310" width="105" height="40" rx="6" fill="#1e293b" stroke="#22c55e" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="672" y="335" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">OpenAI</text>
+
+  <rect x="735" y="310" width="105" height="40" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="787" y="335" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">DeepSeek</text>
+
+  <rect x="620" y="360" width="105" height="40" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="672" y="385" text-anchor="middle" fill="#fcd34d" font-size="9" font-weight="600">Anthropic</text>
+
+  <rect x="735" y="360" width="105" height="40" rx="6" fill="#1e293b" stroke="#a855f7" stroke-width="1" stroke-opacity="0.2"/>
+  <text x="787" y="385" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">Ollama</text>
+
+  <!-- Config -->
+  <rect x="620" y="414" width="220" height="36" rx="6" fill="#1e293b" stroke="#64748b" stroke-width="1" stroke-opacity="0.15"/>
+  <text x="730" y="437" text-anchor="middle" fill="#94a3b8" font-size="10">llm.config.json (热更新) | .env</text>
+
+  <!-- Role Mapping -->
+  <rect x="620" y="458" width="220" height="24" rx="6" fill="#1e293b" stroke="#64748b" stroke-width="1" stroke-opacity="0.1"/>
+  <text x="730" y="475" text-anchor="middle" fill="#64748b" font-size="9">角色映射: gm | character | compressor | embedding*</text>
+
+  <!-- Footer -->
+  <text x="450" y="514" text-anchor="middle" fill="#475569" font-size="9">Local-first | Zero cloud dependency | Data stays on your machine</text>
+</svg>

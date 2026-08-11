@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580" font-family="Segoe UI, system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0f0f1a"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+    <linearGradient id="worldG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1e3a5f"/><stop offset="100%" stop-color="#162d4a"/></linearGradient>
+    <linearGradient id="chatG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3d2b0a"/><stop offset="100%" stop-color="#2a1d06"/></linearGradient>
+    <linearGradient id="gmG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3b1a1a"/><stop offset="100%" stop-color="#2a1010"/></linearGradient>
+    <linearGradient id="mapG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1a3320"/><stop offset="100%" stop-color="#122418"/></linearGradient>
+    <linearGradient id="ruleG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#2d1a3d"/><stop offset="100%" stop-color="#1e1028"/></linearGradient>
+    <linearGradient id="memG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1a2a3d"/><stop offset="100%" stop-color="#101828"/></linearGradient>
+    <linearGradient id="charG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3d3b0a"/><stop offset="100%" stop-color="#2a2806"/></linearGradient>
+    <linearGradient id="llmG" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0a2a3d"/><stop offset="100%" stop-color="#061828"/></linearGradient>
+  </defs>
+
+  <rect width="900" height="580" fill="url(#bg3)" rx="12"/>
+
+  <!-- Title -->
+  <text x="450" y="38" text-anchor="middle" fill="#f59e0b" font-size="20" font-weight="700" letter-spacing="2">FEATURE MODULES</text>
+  <line x1="300" y1="50" x2="600" y2="50" stroke="#f59e0b" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- ==================== ROW 1 ==================== -->
+
+  <!-- 多世界系统 -->
+  <rect x="40" y="70" width="260" height="220" rx="10" fill="url(#worldG)" filter="url(#cardShadow)" stroke="#3b82f6" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="60" y="86" width="8" height="8" rx="2" fill="#3b82f6"/>
+  <text x="76" y="95" fill="#60a5fa" font-size="14" font-weight="700">多世界系统</text>
+  <text x="76" y="112" fill="#94a3b8" font-size="10">Multi-World Architecture</text>
+  <line x1="60" y1="120" x2="280" y2="120" stroke="#3b82f6" stroke-width="0.5" opacity="0.2"/>
+  <text x="60" y="140" fill="#cbd5e1" font-size="10">- 创建 / 切换 / 删除世界</text>
+  <text x="60" y="157" fill="#cbd5e1" font-size="10">- world_id 外键全表隔离</text>
+  <text x="60" y="174" fill="#cbd5e1" font-size="10">- 角色库跨世界共享</text>
+  <text x="60" y="191" fill="#cbd5e1" font-size="10">- 导出世界设定 JSON</text>
+  <text x="60" y="208" fill="#cbd5e1" font-size="10">- 切换时自动重载全部数据</text>
+  <rect x="60" y="225" width="60" height="20" rx="4" fill="#3b82f6" fill-opacity="0.15"/>
+  <text x="90" y="239" text-anchor="middle" fill="#60a5fa" font-size="9" font-weight="600">核心</text>
+  <rect x="128" y="225" width="60" height="20" rx="4" fill="#22c55e" fill-opacity="0.15"/>
+  <text x="158" y="239" text-anchor="middle" fill="#86efac" font-size="9" font-weight="600">已就绪</text>
+
+  <!-- 对话系统 -->
+  <rect x="320" y="70" width="260" height="220" rx="10" fill="url(#chatG)" filter="url(#cardShadow)" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="340" y="86" width="8" height="8" rx="2" fill="#f59e0b"/>
+  <text x="356" y="95" fill="#fcd34d" font-size="14" font-weight="700">对话系统</text>
+  <text x="356" y="112" fill="#94a3b8" font-size="10">Chat Engine (3 Modes)</text>
+  <line x1="340" y1="120" x2="560" y2="120" stroke="#f59e0b" stroke-width="0.5" opacity="0.2"/>
+  <text x="340" y="140" fill="#cbd5e1" font-size="10">- 角色扮演: 1v1 AI 对话</text>
+  <text x="340" y="157" fill="#cbd5e1" font-size="10">- 文字冒险: 旁白 + 角色交替</text>
+  <text x="340" y="174" fill="#cbd5e1" font-size="10">- 群聊剧场: 多角色 speaker 轮转</text>
+  <text x="340" y="191" fill="#cbd5e1" font-size="10">- SSE 流式输出</text>
+  <text x="340" y="208" fill="#cbd5e1" font-size="10">- 模式可随时切换</text>
+  <rect x="340" y="225" width="60" height="20" rx="4" fill="#f59e0b" fill-opacity="0.15"/>
+  <text x="370" y="239" text-anchor="middle" fill="#fcd34d" font-size="9" font-weight="600">核心</text>
+  <rect x="408" y="225" width="60" height="20" rx="4" fill="#22c55e" fill-opacity="0.15"/>
+  <text x="438" y="239" text-anchor="middle" fill="#86efac" font-size="9" font-weight="600">已就绪</text>
+
+  <!-- GM Agent -->
+  <rect x="600" y="70" width="260" height="220" rx="10" fill="url(#gmG)" filter="url(#cardShadow)" stroke="#ef4444" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="620" y="86" width="8" height="8" rx="2" fill="#ef4444"/>
+  <text x="636" y="95" fill="#fca5a5" font-size="14" font-weight="700">GM Agent</text>
+  <text x="636" y="112" fill="#94a3b8" font-size="10">Meta-layer Game Master</text>
+  <line x1="620" y1="120" x2="840" y2="120" stroke="#ef4444" stroke-width="0.5" opacity="0.2"/>
+  <text x="620" y="140" fill="#cbd5e1" font-size="10">- 骰子: roll_attack / skill_check</text>
+  <text x="620" y="157" fill="#cbd5e1" font-size="10">- 角色: create / update_character</text>
+  <text x="620" y="174" fill="#cbd5e1" font-size="10">- 地点: create / update_location</text>
+  <text x="620" y="191" fill="#cbd5e1" font-size="10">- 任务: create_quest / get_quests</text>
+  <text x="620" y="208" fill="#cbd5e1" font-size="10">- 状态: player / character_state</text>
+  <rect x="620" y="225" width="60" height="20" rx="4" fill="#ef4444" fill-opacity="0.15"/>
+  <text x="650" y="239" text-anchor="middle" fill="#fca5a5" font-size="9" font-weight="600">核心</text>
+  <rect x="688" y="225" width="60" height="20" rx="4" fill="#22c55e" fill-opacity="0.15"/>
+  <text x="718" y="239" text-anchor="middle" fill="#86efac" font-size="9" font-weight="600">已就绪</text>
+
+  <!-- ==================== ROW 2 ==================== -->
+
+  <!-- 世界地图 -->
+  <rect x="40" y="310" width="260" height="220" rx="10" fill="url(#mapG)" filter="url(#cardShadow)" stroke="#22c55e" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="60" y="326" width="8" height="8" rx="2" fill="#22c55e"/>
+  <text x="76" y="335" fill="#86efac" font-size="14" font-weight="700">世界地图</text>
+  <text x="76" y="352" fill="#94a3b8" font-size="10">Interactive Map Editor</text>
+  <line x1="60" y1="360" x2="280" y2="360" stroke="#22c55e" stroke-width="0.5" opacity="0.2"/>
+  <text x="60" y="380" fill="#cbd5e1" font-size="10">- 纯 SVG 自绘地图</text>
+  <text x="60" y="397" fill="#cbd5e1" font-size="10">- 弹窗式交互不占对话区</text>
+  <text x="60" y="414" fill="#cbd5e1" font-size="10">- 导演模式拖拽编辑</text>
+  <text x="60" y="431" fill="#cbd5e1" font-size="10">- 6 种地点类型</text>
+  <text x="60" y="448" fill="#cbd5e1" font-size="10">- GM skill 自动创建地点</text>
+  <rect x="60" y="465" width="60" height="20" rx="4" fill="#22c55e" fill-opacity="0.15"/>
+  <text x="90" y="479" text-anchor="middle" fill="#86efac" font-size="9" font-weight="600">已就绪</text>
+
+  <!-- 角色系统 -->
+  <rect x="320" y="310" width="260" height="220" rx="10" fill="url(#charG)" filter="url(#cardShadow)" stroke="#eab308" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="340" y="326" width="8" height="8" rx="2" fill="#eab308"/>
+  <text x="356" y="335" fill="#fde047" font-size="14" font-weight="700">角色系统</text>
+  <text x="356" y="352" fill="#94a3b8" font-size="10">Character Card System</text>
+  <line x1="340" y1="360" x2="560" y2="360" stroke="#eab308" stroke-width="0.5" opacity="0.2"/>
+  <text x="340" y="380" fill="#cbd5e1" font-size="10">- 板块化角色卡编辑器</text>
+  <text x="340" y="397" fill="#cbd5e1" font-size="10">- 角色库跨世界共享</text>
+  <text x="340" y="414" fill="#cbd5e1" font-size="10">- PNG 角色卡导入导出</text>
+  <text x="340" y="431" fill="#cbd5e1" font-size="10">- 玩家人设 (全局注入)</text>
+  <text x="340" y="448" fill="#cbd5e1" font-size="10">- 动态状态栏 (GM 维护)</text>
+  <rect x="340" y="465" width="60" height="20" rx="4" fill="#eab308" fill-opacity="0.15"/>
+  <text x="370" y="479" text-anchor="middle" fill="#fde047" font-size="9" font-weight="600">已就绪</text>
+
+  <!-- 世界规则 + 记忆 + LLM -->
+  <rect x="600" y="310" width="260" height="102" rx="10" fill="url(#ruleG)" filter="url(#cardShadow)" stroke="#a855f7" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="620" y="326" width="8" height="8" rx="2" fill="#a855f7"/>
+  <text x="636" y="335" fill="#c4b5fd" font-size="14" font-weight="700">世界规则</text>
+  <text x="636" y="352" fill="#94a3b8" font-size="10">World Rules Engine</text>
+  <line x1="620" y1="360" x2="840" y2="360" stroke="#a855f7" stroke-width="0.5" opacity="0.2"/>
+  <text x="620" y="378" fill="#cbd5e1" font-size="10">- GM + 玩家共编</text>
+  <text x="620" y="393" fill="#cbd5e1" font-size="10">- 注入所有对话 system prompt</text>
+  <rect x="770" y="370" width="70" height="20" rx="4" fill="#a855f7" fill-opacity="0.15"/>
+  <text x="805" y="384" text-anchor="middle" fill="#c4b5fd" font-size="9" font-weight="600">已就绪</text>
+
+  <!-- 记忆系统 -->
+  <rect x="600" y="428" width="125" height="102" rx="10" fill="url(#memG)" filter="url(#cardShadow)" stroke="#06b6d4" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="615" y="444" width="8" height="8" rx="2" fill="#06b6d4"/>
+  <text x="630" y="453" fill="#67e8f9" font-size="12" font-weight="700">记忆</text>
+  <line x1="615" y1="460" x2="710" y2="460" stroke="#06b6d4" stroke-width="0.5" opacity="0.2"/>
+  <text x="615" y="476" fill="#cbd5e1" font-size="9">后台提取</text>
+  <text x="615" y="491" fill="#cbd5e1" font-size="9">子串匹配</text>
+  <text x="615" y="506" fill="#cbd5e1" font-size="9">自动压缩</text>
+
+  <!-- LLM 配置 -->
+  <rect x="735" y="428" width="125" height="102" rx="10" fill="url(#llmG)" filter="url(#cardShadow)" stroke="#3b82f6" stroke-width="1.5" stroke-opacity="0.5"/>
+  <rect x="750" y="444" width="8" height="8" rx="2" fill="#3b82f6"/>
+  <text x="765" y="453" fill="#60a5fa" font-size="12" font-weight="700">LLM</text>
+  <line x1="750" y1="460" x2="845" y2="460" stroke="#3b82f6" stroke-width="0.5" opacity="0.2"/>
+  <text x="750" y="476" fill="#cbd5e1" font-size="9">多 Provider</text>
+  <text x="750" y="491" fill="#cbd5e1" font-size="9">角色映射</text>
+  <text x="750" y="506" fill="#cbd5e1" font-size="9">热更新配置</text>
+
+  <!-- Footer -->
+  <text x="450" y="555" text-anchor="middle" fill="#475569" font-size="9">All features are world-isolated via world_id foreign key | Switch worlds = zero cross-contamination</text>
+  <text x="450" y="570" text-anchor="middle" fill="#475569" font-size="9">LLM handles narrative | Code engine handles deterministic facts (dice, coordinates, states)</text>
+</svg>

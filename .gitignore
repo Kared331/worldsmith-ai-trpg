@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+client/dist/
+
+# Environment variables (contain API keys - NEVER commit)
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# Database files (local data, not for version control)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.db.bak*
+data/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary debug scripts
+server/__*.cjs
+server/_*.mjs
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp

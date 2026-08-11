@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   worldsmith 设计 Token — 暖调暗黑简约 (Dark Minimal · Warm)
+   背景: stone 暖灰系  强调: amber 琥珀 (炉火/锻造意象)
+   ============================================================ */
+
+@layer base {
+  :root {
+    /* 亮色模式 (保留, 但默认暗色) */
+    --background: 40 20% 98%;
+    --foreground: 20 14% 12%;
+    --card: 40 20% 99%;
+    --card-foreground: 20 14% 12%;
+    --popover: 40 20% 99%;
+    --popover-foreground: 20 14% 12%;
+    --primary: 32 95% 44%;
+    --primary-foreground: 40 30% 98%;
+    --secondary: 30 6% 92%;
+    --secondary-foreground: 20 14% 12%;
+    --muted: 30 6% 92%;
+    --muted-foreground: 20 6% 40%;
+    --accent: 32 95% 44%;
+    --accent-foreground: 40 30% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 40 30% 98%;
+    --border: 30 6% 86%;
+    --input: 30 6% 86%;
+    --ring: 32 95% 44%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* 暖黑底 */
+    --background: 20 14% 4%;        /* #0c0a09 */
+    --foreground: 30 10% 88%;        /* #e7e5e4 */
+    --card: 20 14% 9%;               /* #1c1917 */
+    --card-foreground: 30 10% 88%;
+    --popover: 20 14% 7%;            /* #161413 */
+    --popover-foreground: 30 10% 88%;
+    --primary: 32 95% 44%;           /* #d97706 amber-600 */
+    --primary-foreground: 40 30% 98%;
+    --secondary: 20 6% 16%;          /* #292524 */
+    --secondary-foreground: 30 10% 88%;
+    --muted: 20 6% 16%;              /* #292524 */
+    --muted-foreground: 20 6% 50%;   /* #78716c */
+    --accent: 32 95% 44%;            /* amber, 与 primary 同 */
+    --accent-foreground: 40 30% 98%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 40 30% 98%;
+    --border: 20 6% 16%;             /* #292524 */
+    --input: 20 6% 16%;
+    --ring: 32 95% 44%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+  /* 滚动条 — 暖调极简 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+  /* 选区 — 琥珀色 */
+  ::selection {
+    background: hsl(32 95% 44% / 0.3);
+  }
+}

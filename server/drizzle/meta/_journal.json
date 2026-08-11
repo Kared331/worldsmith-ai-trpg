@@ -1,0 +1,90 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786159988863,
+      "tag": "0000_great_namor",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786160802205,
+      "tag": "0001_sour_bishop",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786161062307,
+      "tag": "0002_thankful_thaddeus_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786162063120,
+      "tag": "0003_spicy_firelord",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786162963474,
+      "tag": "0004_faithful_bastion",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786163175450,
+      "tag": "0005_normal_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786169146231,
+      "tag": "0006_smiling_loa",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786287658135,
+      "tag": "0007_wonderful_angel",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786287658136,
+      "tag": "0008_acoustic_kingpin",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786336500000,
+      "tag": "0009_shiny_cyclops",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1786368000000,
+      "tag": "0010_world_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1786443401805,
+      "tag": "0011_many_domino",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "worldsmith",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local AI roleplay + open-world RPG engine (code engine + GM agent)",
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "dev": "npm run dev --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2"
+  }
+}
