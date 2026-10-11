@@ -327,6 +327,23 @@ LLM 的算术不可靠（`2d6+3` 可能算错），骰子随机性也无法验�
 
 ---
 
+## 🗺️ 简历声明 → 代码导航
+
+简历中的每条项目声明对应的真实代码位置，欢迎按图索骥：
+
+| 简历声明 | 代码位置 |
+|---------|---------|
+| 「代码引擎 + GM Agent」双轮驱动架构 | `server/src/gm/service.ts`（GM 只做调用决策与叙事包装，确定性事实交代码引擎） |
+| Function Calling 确定性 Skills（骰子 / 地点 / 状态） | `server/src/skills/index.ts`（`roll_attack` / `create_location` / `update_player_state` 等） |
+| 多 Provider 热切换 + 配置热更新 | `server/src/llm/client.ts` · `server/src/llm/config.ts`（`llm.config.json` mtime 热加载） |
+| 多世界隔离（`world_id` 外键 + `x-world-id` 头） | `server/src/lib/world-context.ts` · `server/src/db/schema.ts` |
+| 后台异步记忆提取与上下文注入 | `server/src/memory/extractor.ts` · `server/src/memory/service.ts` |
+| 三种对话模式与世界规则注入 | `server/src/chat/context.ts` · `server/src/chat/service.ts` |
+| 纯 SVG 世界地图编辑器（含 GM 自动建点） | `client/src/components/MapPanel.tsx`，黄金角散布算法 `server/src/lib/geo.ts` |
+| 双轨状态栏（玩家 + 角色动态状态） | `server/src/routes/player-state.ts` · `server/src/routes/character-state.ts` |
+
+---
+
 ## 🤝 贡献指南
 
 欢迎贡献代码、提交 Issue 或建议新功能。请遵循以下流程：
