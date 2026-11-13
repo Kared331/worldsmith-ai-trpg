@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { eq, desc, asc, and, inArray } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import { getWorldId } from '../lib/world-context.js'
+import { scopedConversation } from '../lib/scope.js'
+import { chatService } from '../chat/service.js'
 
 const conversationCreateSchema = z.object({
   characterId: z.string().min(1).optional(),
@@ -189,14 +191,58 @@ conversationsRouter.post('/', async (req, res) => {
       })),
     )
   }
+
+  // ---------- 开场白注入 (RPG 仪式感) ----------
+  // chat: 角色先开口 (firstMessage); adventure: GM 开场叙事; group: GM 介绍场景
+  const openingTime = new Date().toISOString()
+  if (mode === 'chat') {
+    const char = found[0]
+    if (char.firstMessage) {
+      await db.insert(schema.messages).values({
+        id: randomUUID(),
+        conversationId: id,
+        role: 'assistant',
+        content: char.firstMessage,
+        speakerName: char.name,
+        createdAt: openingTime,
+      })
+    }
+  } else if (mode === 'adventure') {
+    const char = found[0]
+    const scene =
+      char.scenario ||
+      `*你踏入了一段全新的冒险旅程。前方是未知的世界，而你——${char.name}——已准备好迎接一切。*\n\n*告诉我，你的故事从何处开始？*`
+    await db.insert(schema.messages).values({
+      id: randomUUID(),
+      conversationId: id,
+      role: 'narrator',
+      content: scene,
+      createdAt: openingTime,
+    })
+  } else if (mode === 'group') {
+    const names = found.map((c) => c.name).join('、')
+    await db.insert(schema.messages).values({
+      id: randomUUID(),
+      conversationId: id,
+      role: 'narrator',
+      content: `*${names} 聚在了同一处。命运的齿轮开始转动——*\n\n*故事，即将展开。*`,
+      createdAt: openingTime,
+    })
+  }
+
   const row = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, id) })
   res.status(201).json(row)
 })
 
 // 群聊成员列表 (含角色信息)
 conversationsRouter.get('/:id/members', async (req, res) => {
+  const conv = await scopedConversation(req.params.id, getWorldId(req))
+  if (!conv) {
+    res.status(404).json({ error: 'conversation not found in current world' })
+    return
+  }
   const members = await db.query.groupMembers.findMany({
-    where: eq(schema.groupMembers.conversationId, req.params.id),
+    where: eq(schema.groupMembers.conversationId, conv.id),
     orderBy: [asc(schema.groupMembers.joinOrder)],
   })
   const characters = await db.query.characters.findMany({
@@ -215,9 +261,197 @@ conversationsRouter.get('/:id/members', async (req, res) => {
 
 // 消息列表
 conversationsRouter.get('/:id/messages', async (req, res) => {
+  const conv = await scopedConversation(req.params.id, getWorldId(req))
+  if (!conv) {
+    res.status(404).json({ error: 'conversation not found in current world' })
+    return
+  }
   const rows = await db.query.messages.findMany({
-    where: eq(schema.messages.conversationId, req.params.id),
+    where: eq(schema.messages.conversationId, conv.id),
     orderBy: [asc(schema.messages.createdAt)],
   })
   res.json(rows)
+})
+
+// 编辑单条消息
+conversationsRouter.patch('/:id/messages/:messageId', async (req, res) => {
+  const parsed = z.object({ content: z.string().min(1).max(20000) }).safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
+    return
+  }
+  const conv = await scopedConversation(req.params.id, getWorldId(req))
+  if (!conv) {
+    res.status(404).json({ error: 'conversation not found in current world' })
+    return
+  }
+  const row = await db.query.messages.findFirst({
+    where: and(
+      eq(schema.messages.id, req.params.messageId),
+      eq(schema.messages.conversationId, conv.id),
+    ),
+  })
+  if (!row) {
+    res.status(404).json({ error: 'message not found' })
+    return
+  }
+  await db
+    .update(schema.messages)
+    .set({ content: parsed.data.content })
+    .where(eq(schema.messages.id, row.id))
+  res.json({ ...row, content: parsed.data.content })
+})
+
+// 删除单条消息
+conversationsRouter.delete('/:id/messages/:messageId', async (req, res) => {
+  const conv = await scopedConversation(req.params.id, getWorldId(req))
+  if (!conv) {
+    res.status(404).json({ error: 'conversation not found in current world' })
+    return
+  }
+  const row = await db.query.messages.findFirst({
+    where: and(
+      eq(schema.messages.id, req.params.messageId),
+      eq(schema.messages.conversationId, conv.id),
+    ),
+  })
+  if (!row) {
+    res.status(404).json({ error: 'message not found' })
+    return
+  }
+  await db.delete(schema.messages).where(eq(schema.messages.id, row.id))
+  res.json({ ok: true })
+})
+
+/**
+ * 从指定消息处分叉: 复制该消息及其之前的全部消息到新对话。
+ * 用于"这一步不满意, 想从更早的地方重来"的场景, 原对话保持不变。
+ */
+conversationsRouter.post('/:id/fork', async (req, res) => {
+  const parsed = z.object({ messageId: z.string().min(1) }).safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'messageId required' })
+    return
+  }
+  const conv = await scopedConversation(req.params.id, getWorldId(req))
+  if (!conv) {
+    res.status(404).json({ error: 'conversation not found in current world' })
+    return
+  }
+
+  const all = await db.query.messages.findMany({
+    where: eq(schema.messages.conversationId, conv.id),
+    orderBy: [asc(schema.messages.createdAt)],
+  })
+  const idx = all.findIndex((m) => m.id === parsed.data.messageId)
+  if (idx === -1) {
+    res.status(404).json({ error: 'message not found' })
+    return
+  }
+  const kept = all.slice(0, idx + 1)
+
+  const newId = randomUUID()
+  const now = new Date().toISOString()
+  await db.insert(schema.conversations).values({
+    id: newId,
+    characterId: conv.characterId,
+    mode: conv.mode,
+    title: conv.title ? `${conv.title} · 分支` : '分支对话',
+    worldId: conv.worldId,
+    createdAt: now,
+  })
+
+  // 群聊需要一并复制成员, 否则新对话没有 speaker 名单
+  if (conv.mode === 'group') {
+    const members = await db.query.groupMembers.findMany({
+      where: eq(schema.groupMembers.conversationId, conv.id),
+    })
+    if (members.length > 0) {
+      await db.insert(schema.groupMembers).values(
+        members.map((m) => ({
+          id: randomUUID(),
+          conversationId: newId,
+          characterId: m.characterId,
+          joinOrder: m.joinOrder,
+        })),
+      )
+    }
+  }
+
+  await db.insert(schema.messages).values(
+    kept.map((m) => ({
+      id: randomUUID(),
+      conversationId: newId,
+      role: m.role,
+      content: m.content,
+      speakerName: m.speakerName,
+      createdAt: m.createdAt,
+    })),
+  )
+
+  const row = await db.query.conversations.findFirst({
+    where: eq(schema.conversations.id, newId),
+  })
+  res.status(201).json(row)
+})
+
+/**
+ * 重新生成最后一条 AI 回复
+ * 末尾是 assistant/narrator 时先删除再重跑; 末尾是用户消息则直接生成
+ * SSE 响应格式与 POST /api/chat 一致
+ */
+conversationsRouter.post('/:id/regenerate', async (req, res) => {
+  const conv = await scopedConversation(req.params.id, getWorldId(req))
+  if (!conv) {
+    res.status(404).json({ error: 'conversation not found in current world' })
+    return
+  }
+
+  const last = await db.query.messages.findFirst({
+    where: eq(schema.messages.conversationId, conv.id),
+    orderBy: [desc(schema.messages.createdAt)],
+  })
+  if (!last) {
+    res.status(400).json({ error: 'conversation has no messages' })
+    return
+  }
+  // 先确认有可复用的用户消息, 再删旧回复: 否则删完才发现无从生成, 旧内容就丢了
+  const lastUser = await db.query.messages.findFirst({
+    where: and(
+      eq(schema.messages.conversationId, conv.id),
+      eq(schema.messages.role, 'user'),
+    ),
+    orderBy: [desc(schema.messages.createdAt)],
+  })
+  if (!lastUser) {
+    res.status(400).json({ error: 'no user message to regenerate from' })
+    return
+  }
+  if (last.role === 'assistant' || last.role === 'narrator') {
+    await db.delete(schema.messages).where(eq(schema.messages.id, last.id))
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  })
+
+  const abort = new AbortController()
+  req.on('close', () => abort.abort())
+
+  try {
+    for await (const ev of chatService.streamMessage(conv.id, null, abort.signal)) {
+      if (res.writableEnded) break
+      res.write(`data: ${JSON.stringify(ev)}\n\n`)
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`)
+    }
+  } finally {
+    res.end()
+  }
 })

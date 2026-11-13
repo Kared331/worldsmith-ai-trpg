@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { eq, asc, isNull, inArray } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import type { WorldExport } from '@worldsmith/shared'
-import { DEFAULT_WORLD_ID } from '../lib/world-context.js'
+import { DEFAULT_WORLD_ID, getWorldId, invalidateWorldCache } from '../lib/world-context.js'
+import { scopedCharacter } from '../lib/scope.js'
 
 const worldCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -56,6 +57,8 @@ worldsRouter.post('/', async (req, res) => {
     updatedAt: now,
   })
   const row = await db.query.worlds.findFirst({ where: eq(schema.worlds.id, id) })
+  // 新世界可能已被缓存为"不存在" (TTL 内), 主动失效
+  invalidateWorldCache(id)
   res.status(201).json(row)
 })
 
@@ -209,6 +212,8 @@ worldsRouter.delete('/:id', async (req, res) => {
 
   // 3. 删除世界本身 (其余表通过 onDelete: cascade 级联删除)
   await db.delete(schema.worlds).where(eq(schema.worlds.id, worldId))
+  // 让中间件的世界存在性缓存立即失效, 避免删除后 5s 内仍放行
+  invalidateWorldCache(worldId)
 
   res.json({
     deleted: true,
@@ -236,11 +241,25 @@ worldsRouter.post('/library/characters/:id/import', async (req, res) => {
     res.status(400).json({ error: 'worldId query param required' })
     return
   }
+  // 目标世界必须存在 (否则会触发 world_id 外键错误, 表现为 500)
+  const targetWorld = await db.query.worlds.findFirst({
+    where: eq(schema.worlds.id, targetWorldId),
+    columns: { id: true },
+  })
+  if (!targetWorld) {
+    res.status(404).json({ error: 'target world not found' })
+    return
+  }
   const source = await db.query.characters.findFirst({
     where: eq(schema.characters.id, sourceId),
   })
   if (!source) {
     res.status(404).json({ error: 'character not found' })
+    return
+  }
+  // 只允许从角色库导入 (worldId = null), 避免把别的世界的角色"复制"过来
+  if (source.worldId !== null) {
+    res.status(400).json({ error: 'source character is not in the library' })
     return
   }
   // 复制角色到目标世界
@@ -267,11 +286,9 @@ worldsRouter.post('/library/characters/:id/import', async (req, res) => {
 
 // 角色库: 把指定世界的角色移到角色库 (worldId 设为 null)
 worldsRouter.post('/library/characters/:id/detach', async (req, res) => {
-  const char = await db.query.characters.findFirst({
-    where: eq(schema.characters.id, req.params.id),
-  })
+  const char = await scopedCharacter(req.params.id, getWorldId(req))
   if (!char) {
-    res.status(404).json({ error: 'character not found' })
+    res.status(404).json({ error: 'character not found in current world' })
     return
   }
   await db

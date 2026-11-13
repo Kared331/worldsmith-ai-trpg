@@ -114,6 +114,8 @@ Worldsmith 提供丰富的功能模块，支持完整的TRPG体验。
 
 模式可通过聊天面板右上角按钮随时切换，切换到群聊时弹出选角色对话框。
 
+每条消息悬停可执行：重新生成（仅末尾 AI 回复）、从此分支出新对话、编辑、删除单条。
+
 #### GM Agent
 
 GM 是独立于角色对话的"元层观察者"，通过 Function Calling 调用 Skills：
@@ -135,6 +137,18 @@ GM 是独立于角色对话的"元层观察者"，通过 Function Calling 调用
 - 启用的规则以 `【世界规则】` 块注入到**所有对话模式**和 **GM** 的 system prompt 最前
 - 按世界隔离，切换世界自动重载
 
+#### 世界知识（Lorebook）
+
+- 关键词命中时自动注入对话上下文，按优先级截断后追加到 system prompt
+- 顶部「知识」面板可增删改，也可导入 SillyTavern 世界书（World Info）JSON
+- 角色卡导入支持 V2（`chara`）与 V3（`ccv3`），导出时同时写入两种 chunk
+
+#### 数据备份
+
+- 「世界管理」面板底部可**下载备份**：用 SQLite `VACUUM INTO` 生成一致性快照，WAL 模式下同样安全
+- **恢复备份**上传 `.db` 后落盘为 `data/worldsmith.db.pending`，下次启动时替换；旧库保留为 `worldsmith.db.bak` 便于回滚
+- 备份覆盖整个数据库（跨所有世界），与单世界的「导出设定 JSON」是两回事
+
 #### 世界地图
 
 - 纯 SVG 自绘地图（已弃用 ReactFlow），支持滚轮缩放 / 拖拽平移 / 点选节点
@@ -150,11 +164,19 @@ GM 是独立于角色对话的"元层观察者"，通过 Function Calling 调用
 - **自定义项**：管理弹窗按「玩家 / 角色」Tab 分页，可自定义键名 / 标签 / lucide 图标
 - **上下文注入**：状态栏值随对话与 GM 请求注入，保证 AI 不编造状态数值
 
-#### 记忆系统
+#### 分层记忆
 
-- 对话达到阈值后后台触发记忆提取（不阻塞主流程）
-- 提取的记忆写入 `knowledge_entries`，按 `scope`（world / character）和 `type` 分类
-- 上下文组装时注入相关记忆摘要
+三层结构，避免长战役失忆，同时控制 token 占用：
+
+| 层 | 内容 | 存储 |
+|---|---|---|
+| **原文窗口** | 最近 20 条消息 / 12000 字符（超出部分丢弃） | `messages` |
+| **滚动摘要** | 每累积 20 条未摘要消息，把最早一批压缩成前情提要 | `conversations.summary` |
+| **记忆条目** | 角色经历 / 关系 / 世界事件，按重要度取前 6 条 | `knowledge_entries` |
+
+- 摘要由 `compressor` 角色生成，与旧摘要合并后控制在 300 字，注入 system prompt 的【前情提要】
+- 摘要与记忆提取都在流式响应结束后后台执行，不阻塞对话
+- 未使用向量检索：剧情对话与记忆条目的词面重合度低，固定注入高重要度条目更稳定
 
 ---
 
@@ -169,7 +191,7 @@ worlds
   ├── messages
   ├── gm_messages       ├── gm_outcomes
   ├── locations         ├── location_connections
-  ├── knowledge_entries (记忆 / 任务)
+  ├── knowledge_entries (记忆 / 任务；通过 ownerId 归属，暂无 world_id 列)
   ├── player_states     (玩家运行时状态)
   ├── character_states  (角色动态状态)
   ├── lore_entries      (世界书, 关键词触发)
@@ -238,6 +260,22 @@ ANTHROPIC_API_KEY=
 
 > **热更新**：修改 `llm.config.json` 后无需重启服务，下一轮对话自动生效。修改 `.env` 需重启。
 
+### 配置提示词（可选）
+
+`server/prompts.json` 存放各模式的 system prompt 模板，改完保存即生效，无需重启（按文件 mtime 重载）。
+
+| 字段 | 作用 |
+|------|------|
+| `formatGuide` | 所有对话模式共用的输出格式说明 |
+| `chat` | 单角色扮演 |
+| `adventure` | 文字冒险（GM 旁白） |
+| `group` | 群聊剧场 |
+| `gm` | GM 元对话 |
+| `gmStory` | GM 剧情模式（`/gm` 前缀） |
+
+模板支持 `{{变量}}` 替换：`{{name}}` / `{{personality}}` / `{{block}}`（角色卡文本）、`{{formatGuide}}`、`{{memberNames}}` / `{{memberBlocks}}`（群聊）。
+文件缺失、字段为空或 JSON 损坏时自动回退内置默认值；角色卡、世界规则、世界快照等结构化内容仍由代码渲染。
+
 ---
 
 ## 📁 项目结构
@@ -264,6 +302,7 @@ worldsmith/
 ├── shared/                     # 前后端共享类型
 ├── scripts/start.mjs           # 跨平台一键启动
 ├── server/llm.config.json      # LLM 配置 (热更新)
+├── server/prompts.json         # 提示词模板 (热更新)
 └── server/.env                 # API Key (重启生效)
 ```
 

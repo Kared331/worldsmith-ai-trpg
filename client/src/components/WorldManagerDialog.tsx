@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Plus, Pencil, Download, Trash2, Check, X, Globe } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, Pencil, Download, Upload, Trash2, Check, X, Globe } from 'lucide-react'
 import type { World, WorldExport } from '@worldsmith/shared'
 import { useAppStore } from '../store/appStore'
-import { DEFAULT_WORLD_ID } from '../lib/api'
+import { DEFAULT_WORLD_ID, api } from '../lib/api'
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/Dialog'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
@@ -46,6 +46,41 @@ export function WorldManagerDialog({ open, onClose, initialMode = 'list' }: Prop
   const [keepCharacters, setKeepCharacters] = useState(true)
   const [exportSettings, setExportSettings] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // 数据备份
+  const [backupBusy, setBackupBusy] = useState(false)
+  const restoreRef = useRef<HTMLInputElement>(null)
+
+  async function handleBackup() {
+    setBackupBusy(true)
+    try {
+      const blob = await api.backupDatabase()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `worldsmith-${new Date().toISOString().slice(0, 10)}.db`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('备份已下载')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '备份失败')
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  async function handleRestore(file: File) {
+    if (!window.confirm('恢复会用备份覆盖当前全部数据，重启服务后生效。确定继续？')) return
+    setBackupBusy(true)
+    try {
+      const r = await api.restoreDatabase(file)
+      toast.success(r.message)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '恢复失败')
+    } finally {
+      setBackupBusy(false)
+    }
+  }
 
   // 切换打开状态时重置
   useEffect(() => {
@@ -287,6 +322,40 @@ export function WorldManagerDialog({ open, onClose, initialMode = 'list' }: Prop
               </div>
             )
           })}
+        </div>
+
+        {/* 数据备份 (整库, 跨所有世界) */}
+        <div className="mt-4 rounded-md border border-border p-3">
+          <div className="mb-1 text-sm font-medium">数据备份</div>
+          <p className="mb-2 text-xs text-muted-foreground">
+            导出整个数据库（含全部世界、角色与记忆）。恢复需重启服务后生效。
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleBackup} disabled={backupBusy}>
+              <Download className="size-3.5" />
+              下载备份
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => restoreRef.current?.click()}
+              disabled={backupBusy}
+            >
+              <Upload className="size-3.5" />
+              恢复备份
+            </Button>
+            <input
+              ref={restoreRef}
+              type="file"
+              accept=".db,application/octet-stream"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleRestore(file)
+                e.target.value = ''
+              }}
+            />
+          </div>
         </div>
 
         <DialogFooter>

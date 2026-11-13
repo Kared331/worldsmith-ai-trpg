@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, or, isNull } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import type { ToolDef } from '../llm/client.js'
 import { autoConnect, connectionExists } from '../lib/geo.js'
@@ -519,12 +519,17 @@ const skills: Skill[] = [
       const key = String(args.key)
       const action = String(args.action ?? 'set')
 
-      // 校验角色存在
+      // 校验角色存在**且属于当前世界** (或为角色库 null)
+      // 否则 GM 可给任意世界的角色写状态, 造出 (characterId 属世界 B, worldId 属世界 A) 的脏行
       const character = await db.query.characters.findFirst({
-        where: eq(schema.characters.id, characterId),
+        where: (c, { and: andFn, eq: eqFn, or: orFn, isNull: isNullFn }) =>
+          andFn(
+            eqFn(c.id, characterId),
+            orFn(eqFn(c.worldId, worldId), isNullFn(c.worldId)),
+          ),
       })
       if (!character) {
-        return { ok: false, error: `character "${characterId}" not found` }
+        return { ok: false, error: `character "${characterId}" not found in current world` }
       }
 
       // 多世界 + 多角色复合条件
@@ -683,6 +688,210 @@ const skills: Skill[] = [
         author: r.author,
         enabled: r.enabled,
       }))
+    },
+  },
+
+  // ============================================================
+  // 扩展 GM 权限: 世界书 / 关系 / 伏笔 / 环境
+  // ============================================================
+
+  {
+    name: 'add_lore_entry',
+    description: '向世界书添加条目: 关键词触发后自动注入对话上下文。GM 在剧情中扩展世界观、补充设定时调用。',
+    parameters: {
+      type: 'object',
+      required: ['keys', 'content'],
+      properties: {
+        keys: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '触发关键词数组, 任一命中即注入 (如 ["龙族", "古龙"])',
+        },
+        content: { type: 'string', description: '条目内容 (会注入对话)' },
+        priority: { type: 'number', description: '优先级, 数字越大越靠前 (默认 1)', default: 1 },
+        enabled: { type: 'boolean', description: '是否启用 (默认 true)', default: true },
+      },
+    },
+    handler: async (args) => {
+      const worldId = worldIdFromArgs(args)
+      const keys = Array.isArray(args.keys) ? args.keys.filter(Boolean) : []
+      if (keys.length === 0) return { error: 'keys 不能为空' }
+      const id = randomUUID()
+      const now = new Date().toISOString()
+      await db.insert(schema.loreEntries).values({
+        id,
+        keys,
+        content: String(args.content ?? ''),
+        priority: Number(args.priority ?? 1),
+        enabled: args.enabled !== false,
+        worldId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return { id, worldId, keys, created: true }
+    },
+  },
+
+  {
+    name: 'create_relationship',
+    description: '建立两个角色间的关系记录。GM 设定角色间的敌对/盟友/恋人/师徒等关系时调用。',
+    parameters: {
+      type: 'object',
+      required: ['fromName', 'toName', 'relation'],
+      properties: {
+        fromName: { type: 'string', description: '角色 A 名称' },
+        toName: { type: 'string', description: '角色 B 名称' },
+        relation: {
+          type: 'string',
+          description: '关系类型, 如 "恋人"/"敌对"/"盟友"/"师徒"/"兄妹"/"仇人"',
+        },
+        detail: { type: 'string', description: '关系详细描述 (可选)', default: '' },
+        importance: {
+          type: 'number',
+          description: '重要度 1-5 (默认 3)',
+          default: 3,
+        },
+      },
+    },
+    handler: async (args) => {
+      const worldId = worldIdFromArgs(args)
+      const fromChar = await db.query.characters.findFirst({
+        where: and(
+          eq(schema.characters.name, String(args.fromName)),
+          or(eq(schema.characters.worldId, worldId), isNull(schema.characters.worldId)),
+        ),
+      })
+      if (!fromChar) return { error: `未找到角色: ${args.fromName}` }
+      const id = randomUUID()
+      const now = new Date().toISOString()
+      await db.insert(schema.knowledgeEntries).values({
+        id,
+        scope: 'character',
+        ownerId: fromChar.id,
+        timestamp: now,
+        type: 'relationship',
+        content: `${args.fromName} → ${args.toName}: ${args.relation}${args.detail ? ` (${args.detail})` : ''}`,
+        tags: [String(args.toName), String(args.relation)],
+        importance: Number(args.importance ?? 3),
+        createdAt: now,
+      })
+      return {
+        id,
+        worldId,
+        from: args.fromName,
+        to: args.toName,
+        relation: args.relation,
+        created: true,
+      }
+    },
+  },
+
+  {
+    name: 'create_foreshadowing',
+    description: '埋下伏笔/事件记录: 写入世界知识库, 供后续剧情回收。GM 想埋线索、记录重要事件时调用。',
+    parameters: {
+      type: 'object',
+      required: ['content'],
+      properties: {
+        content: { type: 'string', description: '伏笔/事件内容描述' },
+        timestamp: {
+          type: 'string',
+          description: '游戏内时间戳 (如 "第3天·夜晚"), 不传则用现实时间',
+          default: '',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '标签 (如 ["伏笔", "主线"])',
+          default: [],
+        },
+        importance: {
+          type: 'number',
+          description: '重要度 1-5 (默认 3, 5 为关键剧情)',
+          default: 3,
+        },
+      },
+    },
+    handler: async (args) => {
+      const worldId = worldIdFromArgs(args)
+      const id = randomUUID()
+      const now = new Date().toISOString()
+      const tags = Array.isArray(args.tags) ? args.tags : []
+      tags.push('foreshadowing')
+      await db.insert(schema.knowledgeEntries).values({
+        id,
+        scope: 'world',
+        ownerId: worldId,
+        timestamp: String(args.timestamp ?? now),
+        type: 'event',
+        content: String(args.content),
+        tags: Array.from(new Set(tags)),
+        importance: Number(args.importance ?? 3),
+        createdAt: now,
+      })
+      return { id, worldId, created: true, importance: Number(args.importance ?? 3) }
+    },
+  },
+
+  {
+    name: 'set_environment',
+    description: '设定世界环境状态: 时间/天气/季节/氛围。GM 推进时间、切换天气、营造氛围时调用。会写入玩家状态栏, 玩家可见。',
+    parameters: {
+      type: 'object',
+      properties: {
+        time: {
+          type: 'string',
+          description: '游戏内时间 (如 "清晨"/"正午"/"黄昏"/"深夜"/"第4天·黄昏")',
+        },
+        weather: {
+          type: 'string',
+          description: '天气 (如 "晴"/"雨"/"雪"/"雾"/"暴风雨")',
+        },
+        season: {
+          type: 'string',
+          description: '季节 (如 "春"/"夏"/"秋"/"冬")',
+        },
+        atmosphere: {
+          type: 'string',
+          description: '氛围描述 (如 "诡异的寂静"/"节日的喧闹")',
+        },
+      },
+    },
+    handler: async (args) => {
+      const worldId = worldIdFromArgs(args)
+      const now = new Date().toISOString()
+      const updates: Array<{ key: string; value: string; label: string; icon: string }> = []
+      if (args.time) updates.push({ key: 'time', value: String(args.time), label: '时间', icon: 'Clock' })
+      if (args.weather) updates.push({ key: 'weather', value: String(args.weather), label: '天气', icon: 'Cloud' })
+      if (args.season) updates.push({ key: 'season', value: String(args.season), label: '季节', icon: 'Leaf' })
+      if (args.atmosphere) updates.push({ key: 'atmosphere', value: String(args.atmosphere), label: '氛围', icon: 'Wind' })
+
+      for (const u of updates) {
+        const existing = await db.query.playerStates.findFirst({
+          where: and(eq(schema.playerStates.worldId, worldId), eq(schema.playerStates.key, u.key)),
+        })
+        if (existing) {
+          await db.update(schema.playerStates)
+            .set({ value: u.value, updatedAt: now })
+            .where(eq(schema.playerStates.id, existing.id))
+        } else {
+          await db.insert(schema.playerStates).values({
+            id: randomUUID(),
+            worldId,
+            key: u.key,
+            value: u.value,
+            label: u.label,
+            icon: u.icon,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+      }
+      return {
+        worldId,
+        updated: updates.map((u) => ({ key: u.key, value: u.value })),
+        count: updates.length,
+      }
     },
   },
 ]

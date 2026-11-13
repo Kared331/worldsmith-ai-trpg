@@ -28,6 +28,10 @@ npm-debug.log*
 server/__*.cjs
 server/_*.mjs
 
+# Internal working docs & local tool state (仅 README 随仓库维护)
+docs/
+.workbuddy/
+
 # OS files
 .DS_Store
 Thumbs.db

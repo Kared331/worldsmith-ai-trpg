@@ -14,6 +14,7 @@ import type {
   CharacterState,
   UserPersona,
   WorldRule,
+  LoreEntry,
 } from '@worldsmith/shared'
 
 // ============================================================
@@ -24,34 +25,40 @@ import type {
 /** 默认世界 ID (与 server DEFAULT_WORLD_ID 对齐) */
 export const DEFAULT_WORLD_ID = 'default-world'
 
-/** 当前世界 ID (模块级, 通过 setWorldHeader 切换) */
-let currentWorldId: string = DEFAULT_WORLD_ID
+// ============================================================
+// 当前世界的单一数据源
+// 原先这里自持一份 `currentWorldId`, 与 store 的 activeWorld 各自维护,
+// 靠手工 setWorldHeader 同步 —— 一旦漏调 (loadWorlds 的兜底分支就漏了)
+// 就会出现「UI 显示世界 A、请求打向世界 B」。
+// 现在改为由 store 注入读取函数, 彻底消除双数据源。
+// ============================================================
+let worldSource: () => string | null = () => null
 
-/** 切换当前世界 (后续所有请求自动带 x-world-id: id) */
-export function setWorldHeader(id: string): void {
-  currentWorldId = id
+/** 绑定当前世界的读取源 (store 创建后调用一次) */
+export function bindWorldSource(fn: () => string | null): void {
+  worldSource = fn
 }
 
-/** 获取当前世界 ID */
+/** 获取当前世界 ID (未选世界时兜底默认世界) */
 export function getWorldHeader(): string {
-  return currentWorldId
+  return worldSource() ?? DEFAULT_WORLD_ID
 }
 
 /** 合并 headers, 自动注入 x-world-id */
 function withWorldHeaders(init?: RequestInit): RequestInit {
   const baseHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
-    'x-world-id': currentWorldId,
+    'x-world-id': getWorldHeader(),
   }
   if (!init?.headers) return { ...init, headers: baseHeaders }
-  // 合并已有 headers (不覆盖 Content-Type)
+  // 合并已有 headers (调用方显式传入的优先)
   const merged =
     init.headers instanceof Headers
       ? Object.fromEntries(init.headers.entries())
       : (init.headers as Record<string, string>)
   return {
     ...init,
-    headers: { ...baseHeaders, ...merged, 'x-world-id': currentWorldId },
+    headers: { ...baseHeaders, ...merged, 'x-world-id': getWorldHeader() },
   }
 }
 
@@ -66,6 +73,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
+/** 二进制请求 (下载 PNG 角色卡等) */
+async function requestBlob(url: string, init?: RequestInit): Promise<Blob> {
+  const res = await fetch(url, withWorldHeaders(init))
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`API ${res.status}: ${body.slice(0, 200)}`)
+  }
+  return res.blob()
+}
+
 /** SSE 流式事件 (与 server StreamEvent 对齐) */
 export interface StreamEvent {
   type: 'delta' | 'done' | 'error' | 'thinking'
@@ -75,18 +92,21 @@ export interface StreamEvent {
   message?: string
 }
 
-/** SSE 流式请求, 返回事件 async generator */
+/** SSE 流式请求, 返回事件 async generator
+ *  @param signal 中止信号 (切世界/切对话/发新消息时由 store abort) */
 export async function* streamSse(
   url: string,
   body: unknown,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-world-id': currentWorldId,
+      'x-world-id': getWorldHeader(),
     },
     body: JSON.stringify(body),
+    signal,
   })
   if (!res.ok || !res.body) {
     // 读取服务器返回的错误详情 (当前只显示状态码, 会丢失 zod 校验等原因)
@@ -108,18 +128,47 @@ export async function* streamSse(
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
+
+  /** 解析一个完整 SSE 帧并 yield; 单帧坏 JSON 只跳过该帧, 不中断整条流 */
+  function* parseFrames(frames: string[]): Generator<StreamEvent> {
+    for (const frame of frames) {
+      const line = frame.trim()
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (!payload) continue
+      try {
+        yield JSON.parse(payload) as StreamEvent
+      } catch {
+        // 代理插入的心跳/注释帧, 或被截断的帧: 跳过
+      }
+    }
+  }
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
     buf += decoder.decode(value, { stream: true })
     const frames = buf.split('\n\n')
     buf = frames.pop() ?? ''
-    for (const frame of frames) {
-      const line = frame.trim()
-      if (!line.startsWith('data:')) continue
-      yield JSON.parse(line.slice(5).trim()) as StreamEvent
-    }
+    yield* parseFrames(frames)
   }
+
+  // 流结束: flush 解码器残留的多字节字符, 并处理最后一帧
+  // (服务端最后一个事件可能未以 \n\n 结尾, 此时它会留在 buf 里被丢弃)
+  buf += decoder.decode()
+  yield* parseFrames(buf.split('\n\n'))
+}
+
+/** 性格演变建议响应 */
+export interface TraitSuggestionResponse {
+  suggestion: {
+    trait: string
+    count: number
+    currentPersonality: string
+    gmText: string
+  } | null
+  reason?: string
+  traitStats?: Array<{ trait: string; count: number }>
 }
 
 export const api = {
@@ -143,6 +192,22 @@ export const api = {
       `/api/characters/${id}/edit-natural`,
       { method: 'POST', body: JSON.stringify({ instruction }) },
     ),
+  /** 性格演变建议 (统计 trait → 达阈值时由 GM 生成建议) */
+  suggestTrait: (characterId: string) =>
+    request<TraitSuggestionResponse>(`/api/characters/${characterId}/suggest-trait`, {
+      method: 'POST',
+    }),
+
+  // ---------- PNG 角色卡 (导入/导出必须走这里, 否则丢失 x-world-id 头) ----------
+  /** 导入 PNG 角色卡 → 在当前世界创建角色 */
+  importCharacterCard: (base64Png: string) =>
+    request<Character>('/api/cards/import', {
+      method: 'POST',
+      body: JSON.stringify({ base64Png }),
+    }),
+  /** 导出角色为 PNG 角色卡 (返回二进制) */
+  exportCharacterCard: (characterId: string) =>
+    requestBlob(`/api/cards/export/${characterId}`),
 
   // ---------- 对话 ----------
   getConversations: (characterId?: string) =>
@@ -189,15 +254,39 @@ export const api = {
     ),
   getMessages: (conversationId: string) =>
     request<ChatMessage[]>(`/api/conversations/${conversationId}/messages`),
+  /** 编辑单条消息 */
+  editMessage: (conversationId: string, messageId: string, content: string) =>
+    request<ChatMessage>(`/api/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    }),
+  /** 删除单条消息 */
+  deleteMessage: (conversationId: string, messageId: string) =>
+    request<{ ok: boolean }>(`/api/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'DELETE',
+    }),
+  /** 重新生成最后一条 AI 回复 (SSE) */
+  regenerate: (conversationId: string, signal?: AbortSignal) =>
+    streamSse(`/api/conversations/${conversationId}/regenerate`, {}, signal),
+  /** 从指定消息处分叉出新对话 */
+  forkConversation: (conversationId: string, messageId: string) =>
+    request<Conversation>(`/api/conversations/${conversationId}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ messageId }),
+    }),
 
   // ---------- 对话流式 ----------
-  streamChat: (conversationId: string, content: string) =>
-    streamSse('/api/chat', { conversationId, content }),
+  streamChat: (conversationId: string, content: string, signal?: AbortSignal) =>
+    streamSse('/api/chat', { conversationId, content }, signal),
 
   // ---------- GM 元对话 ----------
   getGmMessages: () => request<ChatMessage[]>('/api/gm/messages'),
-  streamGmChat: (content: string, conversationId?: string) =>
-    streamSse('/api/gm/chat', conversationId ? { content, conversationId } : { content }),
+  streamGmChat: (content: string, conversationId?: string, signal?: AbortSignal) =>
+    streamSse(
+      '/api/gm/chat',
+      conversationId ? { content, conversationId } : { content },
+      signal,
+    ),
   getGmOutcomes: () => request<GmOutcome[]>('/api/gm/outcomes'),
   chooseOutcome: (
     id: string,
@@ -207,6 +296,41 @@ export const api = {
     request<GmOutcome>(`/api/gm/outcomes/${id}`, {
       method: 'PUT',
       body: JSON.stringify({ choice, customText }),
+    }),
+
+  // ---------- 世界知识 (Lorebook) ----------
+  getLore: () => request<LoreEntry[]>('/api/lore'),
+  createLore: (data: {
+    keys: string[]
+    content: string
+    priority?: number
+    enabled?: boolean
+  }) => request<LoreEntry>('/api/lore', { method: 'POST', body: JSON.stringify(data) }),
+  updateLore: (
+    id: string,
+    data: Partial<{ keys: string[]; content: string; priority: number; enabled: boolean }>,
+  ) =>
+    request<LoreEntry>(`/api/lore/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteLore: (id: string) => request<void>(`/api/lore/${id}`, { method: 'DELETE' }),
+  /** 导入 SillyTavern 世界书 JSON (World Info) */
+  importLore: (payload: unknown) =>
+    request<{ imported: number; skipped: number }>('/api/lore/import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // ---------- 数据备份 ----------
+  /** 下载整库备份 (VACUUM INTO 一致性快照) */
+  backupDatabase: () => requestBlob('/api/system/backup'),
+  /** 上传备份, 重启服务后生效 */
+  restoreDatabase: (file: File) =>
+    request<{ ok: boolean; message: string }>('/api/system/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
     }),
 
   // ---------- 世界地图 ----------

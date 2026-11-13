@@ -3,11 +3,13 @@ import zlib from 'node:zlib'
 
 // ============================================================
 // PNG 角色卡 (SillyTavern / Chub 兼容):
-// PNG tEXt chunk 中嵌入 base64 的 JSON 角色数据 (key: "chara")
-// 读取用 pngjs (支持解析 tEXt); 写入手写 chunk 注入 (pngjs 不写 tEXt)
+// PNG tEXt chunk 中嵌入 base64 的 JSON 角色数据
+//   - "ccv3": Character Card V3 (字段统一在 data 下)
+//   - "chara": Character Card V2 (字段可在顶层, 也可在 data 下)
+// 读取优先 V3; 导出时同时写两个 chunk, 保证新旧客户端都能识别
 // ============================================================
 
-/** SillyTavern 角色卡格式 */
+/** SillyTavern 角色卡格式 (归一化后的扁平结构) */
 export interface CharCardV2 {
   name: string
   description: string
@@ -23,6 +25,20 @@ export interface CharCardV2 {
 type PngWithText = PNG & { text?: Record<string, string> }
 
 const CHARA_KEY = 'chara'
+const CCV3_KEY = 'ccv3'
+
+/**
+ * 统一 V3 / V2 的数据层级。
+ * V3 规范把字段一律放在 data 下; V2 也允许 data 包装。
+ * 这里把 data 合并到顶层, 让字段读取方只面对一套结构。
+ */
+function normalizeCard(card: unknown): CharCardV2 | null {
+  if (!card || typeof card !== 'object') return null
+  const obj = card as Record<string, unknown>
+  const data =
+    obj.data && typeof obj.data === 'object' ? (obj.data as Record<string, unknown>) : null
+  return (data ? { ...obj, ...data } : obj) as CharCardV2
+}
 
 /**
  * 从 PNG buffer 读取角色卡 (找不到返回 null)
@@ -36,6 +52,7 @@ export function readCharCard(buffer: Buffer): CharCardV2 | null {
     return null
   }
   let offset = 8
+  const found: Record<string, string> = {}
   while (offset + 12 <= buffer.length) {
     const len = buffer.readUInt32BE(offset)
     const type = buffer.subarray(offset + 4, offset + 8).toString('ascii')
@@ -44,19 +61,22 @@ export function readCharCard(buffer: Buffer): CharCardV2 | null {
       const nul = data.indexOf(0)
       if (nul !== -1) {
         const key = data.subarray(0, nul).toString('utf-8')
-        if (key === CHARA_KEY) {
-          const b64 = data.subarray(nul + 1).toString('utf-8')
-          try {
-            return JSON.parse(Buffer.from(b64, 'base64').toString('utf-8')) as CharCardV2
-          } catch {
-            return null
-          }
+        if (key === CHARA_KEY || key === CCV3_KEY) {
+          found[key] = data.subarray(nul + 1).toString('utf-8')
         }
       }
     }
     offset += 12 + len
   }
-  return null
+
+  // V3 优先, 回退 V2
+  const raw = found[CCV3_KEY] ?? found[CHARA_KEY]
+  if (!raw) return null
+  try {
+    return normalizeCard(JSON.parse(Buffer.from(raw, 'base64').toString('utf-8')))
+  } catch {
+    return null
+  }
 }
 
 /** 构造一个 PNG chunk (length + type + data + crc32) */
@@ -88,6 +108,14 @@ function injectTextChunk(png: Buffer, textChunk: Buffer): Buffer {
   return Buffer.concat(out)
 }
 
+/** 编码一个 tEXt chunk 载荷: key\0base64(json) */
+function encodeText(key: string, value: unknown): Buffer {
+  return Buffer.concat([
+    Buffer.from(key + '\u0000', 'utf-8'),
+    Buffer.from(Buffer.from(JSON.stringify(value)).toString('base64'), 'utf-8'),
+  ])
+}
+
 /** 生成带角色卡 chunk 的 PNG (无头像时生成 1x1 占位像素) */
 export function writeCharCard(card: CharCardV2, avatar?: Buffer | null): Buffer {
   const png = new PNG({
@@ -110,11 +138,13 @@ export function writeCharCard(card: CharCardV2, avatar?: Buffer | null): Buffer 
     }
   }
   const base = PNG.sync.write(png)
-  const textData = Buffer.concat([
-    Buffer.from(CHARA_KEY + '\u0000', 'utf-8'),
-    Buffer.from(Buffer.from(JSON.stringify(card)).toString('base64'), 'utf-8'),
+  // 同时写 V2(chara) 与 V3(ccv3): 老客户端读前者, SillyTavern 等新客户端优先读后者
+  const v3Card = { spec: 'chara_card_v3', spec_version: '3.0', data: { ...card } }
+  const textChunk = Buffer.concat([
+    makeChunk('tEXt', encodeText(CHARA_KEY, card)),
+    makeChunk('tEXt', encodeText(CCV3_KEY, v3Card)),
   ])
-  return injectTextChunk(base, makeChunk('tEXt', textData))
+  return injectTextChunk(base, textChunk)
 }
 
 /** worldsmith 角色 → CharCardV2 */

@@ -52,6 +52,16 @@ function baseHeaders(endpoint: ResolvedEndpoint): Record<string, string> {
   return h
 }
 
+// 兜底超时: 防止 provider 挂起导致请求永久不返回 (前端表现为无限 loading)
+const STREAM_TIMEOUT_MS = 300_000
+const REQUEST_TIMEOUT_MS = 180_000
+
+/** 合并调用方 signal 与兜底超时 (AbortSignal.any 需要 Node >= 20) */
+function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
 /** OpenAI 兼容 SSE 解析: 逐 chunk 产出 content delta */
 async function* streamOpenAICompat(
   res: Response,
@@ -131,7 +141,7 @@ async function requestOpenAICompat(
       max_tokens: opts.maxTokens ?? 2048,
       stream: true,
     }),
-    signal: opts.signal,
+    signal: withTimeout(opts.signal, STREAM_TIMEOUT_MS),
   })
 }
 
@@ -160,7 +170,7 @@ async function requestAnthropic(
       system: system || undefined,
       messages: rest,
     }),
-    signal: opts.signal,
+    signal: withTimeout(opts.signal, STREAM_TIMEOUT_MS),
   })
 }
 
@@ -237,7 +247,7 @@ export async function chatWithTools(
       temperature: opts.temperature ?? 0.8,
       max_tokens: opts.maxTokens ?? 2048,
     }),
-    signal: opts.signal,
+    signal: withTimeout(opts.signal, REQUEST_TIMEOUT_MS),
   })
   await ensureOk(res)
   const data = (await res.json()) as {
@@ -278,6 +288,7 @@ export async function createEmbedding(
     method: 'POST',
     headers: baseHeaders(ep),
     body: JSON.stringify({ model: ep.modelId, input: text }),
+    signal: withTimeout(undefined, REQUEST_TIMEOUT_MS),
   })
   await ensureOk(res)
   const data = (await res.json()) as {

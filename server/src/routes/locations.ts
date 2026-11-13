@@ -5,6 +5,7 @@ import { eq, and, or } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import { connectionExists, autoConnect } from '../lib/geo.js'
 import { getWorldId } from '../lib/world-context.js'
+import { scopedLocation } from '../lib/scope.js'
 
 const locationCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -56,11 +57,9 @@ locationsRouter.post('/', async (req, res) => {
 
 // 详情
 locationsRouter.get('/:id', async (req, res) => {
-  const row = await db.query.locations.findFirst({
-    where: eq(schema.locations.id, req.params.id),
-  })
+  const row = await scopedLocation(req.params.id, getWorldId(req))
   if (!row) {
-    res.status(404).json({ error: 'location not found' })
+    res.status(404).json({ error: 'location not found in current world' })
     return
   }
   res.json(row)
@@ -73,11 +72,9 @@ locationsRouter.put('/:id', async (req, res) => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
     return
   }
-  const existing = await db.query.locations.findFirst({
-    where: eq(schema.locations.id, req.params.id),
-  })
+  const existing = await scopedLocation(req.params.id, getWorldId(req))
   if (!existing) {
-    res.status(404).json({ error: 'location not found' })
+    res.status(404).json({ error: 'location not found in current world' })
     return
   }
   await db
@@ -92,23 +89,31 @@ locationsRouter.put('/:id', async (req, res) => {
 
 // 删除 (连线级联删除)
 locationsRouter.delete('/:id', async (req, res) => {
-  const result = await db
-    .delete(schema.locations)
-    .where(eq(schema.locations.id, req.params.id))
-  if (result.changes === 0) {
-    res.status(404).json({ error: 'location not found' })
+  const existing = await scopedLocation(req.params.id, getWorldId(req))
+  if (!existing) {
+    res.status(404).json({ error: 'location not found in current world' })
     return
   }
+  await db.delete(schema.locations).where(eq(schema.locations.id, req.params.id))
   res.status(204).end()
 })
 
-// 手动连线
+// 手动连线: 两端都必须属于当前世界 (否则会造出跨世界连线)
 locationsRouter.post('/connections', async (req, res) => {
   const parsed = z
     .object({ fromId: z.string().min(1), toId: z.string().min(1) })
     .safeParse(req.body)
   if (!parsed.success || parsed.data.fromId === parsed.data.toId) {
     res.status(400).json({ error: 'invalid connection' })
+    return
+  }
+  const worldId = getWorldId(req)
+  const [from, to] = await Promise.all([
+    scopedLocation(parsed.data.fromId, worldId),
+    scopedLocation(parsed.data.toId, worldId),
+  ])
+  if (!from || !to) {
+    res.status(404).json({ error: 'location not found in current world' })
     return
   }
   if (await connectionExists(parsed.data.fromId, parsed.data.toId)) {
@@ -123,9 +128,18 @@ locationsRouter.post('/connections', async (req, res) => {
   res.status(201).json({ ok: true })
 })
 
-// 删除连线
+// 删除连线 (两端都必须在当前世界)
 locationsRouter.delete('/connections/:from/:to', async (req, res) => {
   const { from, to } = req.params
+  const worldId = getWorldId(req)
+  const [a, b] = await Promise.all([
+    scopedLocation(from, worldId),
+    scopedLocation(to, worldId),
+  ])
+  if (!a || !b) {
+    res.status(404).json({ error: 'location not found in current world' })
+    return
+  }
   await db
     .delete(schema.locationConnections)
     .where(

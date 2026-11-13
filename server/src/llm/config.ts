@@ -37,6 +37,8 @@ export const llmConfigSchema = z.object({
 const CONFIG_PATH = path.resolve(process.cwd(), 'llm.config.json')
 
 let cached: LlmConfig | null = null
+/** 未解析的原始配置 (保留 ${env:XXX} 占位符), 仅用于写回磁盘 */
+let cachedRaw: LlmConfig | null = null
 let watcher: fs.FSWatcher | null = null
 let watchTimer: NodeJS.Timeout | null = null
 
@@ -65,18 +67,32 @@ function resolveEnv(value: unknown, seen = new Set<string>()): unknown {
   return value
 }
 
-/** 从磁盘加载并校验配置 (每次重新读取) */
+/** 从磁盘加载并校验配置 (每次重新读取)
+ *  同时缓存两份: 已解析 (cached, 供运行时调用 LLM) 与未解析 (cachedRaw, 供写回) */
 export function loadConfig(): LlmConfig {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) as unknown
   const parsed = llmConfigSchema.parse(raw)
+  cachedRaw = parsed
   cached = resolveEnv(parsed) as LlmConfig
   return cached
 }
 
-/** 获取当前配置 (带缓存, 热更新自动失效) */
+/** 获取当前配置 (已解析 apiKey, 供运行时使用; 带缓存, 热更新自动失效) */
 export function getConfig(): LlmConfig {
   if (!cached) loadConfig()
   return cached as LlmConfig
+}
+
+/**
+ * 获取未解析的配置 (保留 ${env:XXX} 占位符)。
+ *
+ * ⚠️ 所有写回磁盘的路径都必须用它作为基底, 绝不能用 getConfig() ——
+ *    getConfig() 已经把占位符替换成真实值, 写回会把明文 API key 落到
+ *    llm.config.json (该文件被 git 跟踪), 同时破坏 extractEnvName() 的识别。
+ */
+export function getRawConfig(): LlmConfig {
+  if (!cachedRaw) loadConfig()
+  return cachedRaw as LlmConfig
 }
 
 /** 注册配置变更回调 */
@@ -169,6 +185,12 @@ export function writeEnvKeys(keys: Record<string, string>): void {
   }
 
   fs.writeFileSync(ENV_PATH, lines.join('\n') + '\n', 'utf-8')
+  // 收紧权限: .env 含明文 API key, 仅所有者可读写 (Windows 上 chmod 无实际效果, 忽略失败)
+  try {
+    fs.chmodSync(ENV_PATH, 0o600)
+  } catch {
+    // 忽略: 部分平台/文件系统不支持
+  }
 
   // 同步到当前进程环境变量 (无需重启即可生效)
   for (const [k, v] of Object.entries(keys)) {
@@ -186,7 +208,8 @@ function extractEnvName(apiKey: string): string | null {
 
 /** 扫描 OpenAI 兼容端点的可用模型列表 */
 export async function scanProviderModels(providerId: string): Promise<string[]> {
-  const cfg = getConfig()
+  // 用未解析配置: 需要自己拿 ${env:XXX} 去 process.env 取值
+  const cfg = getRawConfig()
   const provider = cfg.providers.find((p) => p.id === providerId)
   if (!provider) throw new Error(`provider "${providerId}" not found`)
 
@@ -219,19 +242,22 @@ export async function scanProviderModels(providerId: string): Promise<string[]> 
 
 // ---------- 保存完整配置 ----------
 
-/** 把配置写回 llm.config.json (保留 ${env:XXX} 占位符) */
+/** 把配置写回 llm.config.json (保留 ${env:XXX} 占位符)
+ *  调用方必须传未解析的配置 (getRawConfig()), 否则占位符会被明文 key 覆盖 */
 export function saveConfig(next: LlmConfig): void {
   // 校验
   const parsed = llmConfigSchema.parse(next)
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
   // loadConfig 会由 fs.watch 触发, 但手动调用确保即时生效
+  cachedRaw = parsed
   cached = resolveEnv(parsed) as LlmConfig
   emitter.emit('change', cached)
 }
 
 /** 更新单个 provider 的 apiKey (写 .env) */
 export function updateProviderApiKey(providerId: string, apiKey: string): void {
-  const cfg = getConfig()
+  // 必须用未解析配置: 只有它才保留 ${env:XXX} 占位符, extractEnvName 才能识别
+  const cfg = getRawConfig()
   const provider = cfg.providers.find((p) => p.id === providerId)
   if (!provider) throw new Error(`provider "${providerId}" not found`)
 
@@ -240,8 +266,8 @@ export function updateProviderApiKey(providerId: string, apiKey: string): void {
     // 占位符模式: 写回 .env
     writeEnvKeys({ [envName]: apiKey })
     // 触发 config 重载 (apiKey 已在 process.env 更新)
-    cached = loadConfig()
-    emitter.emit('change', cached)
+    loadConfig()
+    emitter.emit('change', cached as LlmConfig)
   } else if (providerId === 'ollama') {
     // ollama 本来就无 key, 忽略
   } else {

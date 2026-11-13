@@ -13,18 +13,67 @@ import type {
   UserPersona,
   WorldRule,
 } from '@worldsmith/shared'
-import { api, setWorldHeader, DEFAULT_WORLD_ID, type StreamEvent } from '../lib/api'
+import { api, bindWorldSource, DEFAULT_WORLD_ID, type StreamEvent } from '../lib/api'
 import { toast } from '../components/ui/Toast'
 
 // 带重试的 API 调用 (解决 vite proxy 启动竞态)
-async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 500): Promise<T> {
+// signal 被中止时立即放弃重试
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 2,
+  delay = 500,
+  signal?: AbortSignal,
+): Promise<T> {
   try {
     return await fn()
   } catch (err) {
-    if (retries <= 0) throw err
+    if (retries <= 0 || signal?.aborted) throw err
     await new Promise((r) => setTimeout(r, delay))
-    return withRetry(fn, retries - 1, delay * 2)
+    if (signal?.aborted) throw err
+    return withRetry(fn, retries - 1, delay * 2, signal)
   }
+}
+
+/** 中止类错误 (用户取消 / 超时) 不应提示给用户 */
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException) {
+    return err.name === 'AbortError' || err.name === 'TimeoutError'
+  }
+  return err instanceof Error && err.name === 'AbortError'
+}
+
+// ============================================================
+// 世界代次
+// 切换世界时自增。所有加载动作在发起时捕获"当前代次 + 世界 id",
+// 响应回来时若代次已变 (或 activeWorld 已变), 直接丢弃结果 ——
+// 否则快速切换世界时, 旧世界较慢的响应会覆盖新世界的数据。
+// ============================================================
+let worldGeneration = 0
+
+/** 捕获当前世界快照, 返回「结果是否仍然有效」的判定函数 */
+function worldGuard(get: () => { activeWorld: { id: string } | null }) {
+  const gen = worldGeneration
+  const worldId = get().activeWorld?.id ?? null
+  return () => gen === worldGeneration && (get().activeWorld?.id ?? null) === worldId
+}
+
+// ============================================================
+// 流式请求取消
+// 每条流一个独立 controller: 切换世界/对话时全部中止,
+// 但聊天流与 GM 流互不干扰 (GmPanel 可以独立于主对话工作)。
+// ============================================================
+const activeStreams = new Set<AbortController>()
+
+function beginStream(): { signal: AbortSignal; end: () => void } {
+  const ctrl = new AbortController()
+  activeStreams.add(ctrl)
+  return { signal: ctrl.signal, end: () => activeStreams.delete(ctrl) }
+}
+
+/** 中止全部进行中的流 */
+function abortAllStreams(): void {
+  for (const ctrl of activeStreams) ctrl.abort()
+  activeStreams.clear()
 }
 
 // ============================================================
@@ -84,6 +133,14 @@ interface AppState {
   exitConversation: () => void
   refreshMessages: () => Promise<void>
   sendMessage: (content: string) => Promise<void>
+  /** 重新生成最后一条 AI 回复 */
+  regenerateMessage: () => Promise<void>
+  /** 编辑单条消息内容 */
+  editMessage: (messageId: string, content: string) => Promise<void>
+  /** 删除单条消息 */
+  deleteMessage: (messageId: string) => Promise<void>
+  /** 从指定消息处分叉出新对话并切换过去 */
+  forkFromMessage: (messageId: string) => Promise<void>
 
   loadGmMessages: () => Promise<void>
   sendGmMessage: (content: string) => Promise<void>
@@ -164,16 +221,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
   async loadWorlds() {
     try {
       const worlds = await withRetry(() => api.getWorlds())
-      // 首次加载: 若无 activeWorld, 选第一个 (或默认世界) 并同步 header
       const current = get().activeWorld
       if (!current && worlds.length > 0) {
+        // 首次加载: 选默认世界 (或第一个)
         const fallback =
           worlds.find((w) => w.id === DEFAULT_WORLD_ID) ?? worlds[0]
-        setWorldHeader(fallback.id)
+        // 世界变了 → 作废之前的在途请求 (x-world-id 由 activeWorld 派生, 无需手工同步)
+        worldGeneration++
         set({ worlds, activeWorld: fallback })
       } else if (current) {
         // activeWorld 已存在, 更新引用为最新数据 (可能被改名)
         const updated = worlds.find((w) => w.id === current.id) ?? null
+        if (!updated) {
+          // 当前世界已不存在 (被删除/列表过期): 切到首个可用世界, 并作废旧响应
+          worldGeneration++
+          abortAllStreams()
+        }
         set({ worlds, activeWorld: updated ?? worlds[0] ?? null })
       } else {
         set({ worlds })
@@ -214,20 +277,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
   async deleteWorld(id, options) {
     try {
       const result = await api.deleteWorld(id, options)
-      // 删除后从列表移除, 若删的是当前世界则切回默认世界
       const remaining = (await api.getWorlds()).filter((w) => w.id !== id)
       const current = get().activeWorld
+      // 先更新世界列表: 否则 switchWorld 会在旧列表里找到刚删掉的世界,
+      // 让用户能切回一个不存在的"僵尸世界"
+      set({ worlds: remaining })
       if (current?.id === id) {
         const fallback =
           remaining.find((w) => w.id === DEFAULT_WORLD_ID) ?? remaining[0] ?? null
         if (fallback) {
           await get().switchWorld(fallback.id)
         } else {
-          setWorldHeader(DEFAULT_WORLD_ID)
-          set({ activeWorld: null, worlds: remaining })
+          worldGeneration++
+          abortAllStreams()
+          set({ activeWorld: null })
         }
-      } else {
-        set({ worlds: remaining })
       }
       return { exportData: result.exportData }
     } catch {
@@ -238,10 +302,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
   async switchWorld(id) {
     const world = get().worlds.find((w) => w.id === id)
     if (!world) return
-    // 1. 同步 API header (必须在加载前, 确保后续请求带正确 worldId)
-    setWorldHeader(world.id)
-    // 2. 清空所有业务状态 (避免跨世界残留)
+    // 1. 中止旧世界进行中的流: 否则会继续消耗 token,
+    //    并在结束时用新世界的数据刷新 (污染新世界)
+    abortAllStreams()
+    // 2. 作废旧世界所有在途请求的响应
+    worldGeneration++
+    // 3. 清空所有业务状态 (避免跨世界残留)
     //    数据重载由 App.tsx 的 useEffect (依赖 activeWorld) 统一触发, 避免重复请求
+    //    注意: 必须一并重置流状态, 否则旧世界的流会把新世界的输入框永久锁死
+    //          (sendMessage 的守卫是 `if (!conv || get().streaming) return`)
     set({
       activeWorld: world,
       characters: [],
@@ -249,13 +318,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       conversations: [],
       activeConversation: null,
       messages: [],
+      streaming: false,
       streamError: null,
       gmMessages: [],
-      gmOutcomes: [],
+      gmStreaming: false,
+      gmThinking: false,
       gmError: null,
+      gmOutcomes: [],
       locations: [],
       connections: [],
       selectedLocation: null,
+      directorMode: false,
       playerStates: [],
       characterStates: [],
       libraryCharacters: [],
@@ -325,8 +398,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   playerStates: [],
   async loadPlayerStates() {
+    const stillCurrent = worldGuard(get)
     try {
       const playerStates = await api.getPlayerStates()
+      if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
       set({ playerStates })
     } catch {
       // 静默失败
@@ -359,9 +434,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // ---------- 角色状态 (动态角色卡) ----------
   characterStates: [],
   async loadCharacterStates() {
+    const stillCurrent = worldGuard(get)
     try {
       // 无参数: 返回当前世界所有角色的动态状态
       const characterStates = await api.getCharacterStates()
+      if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
       set({ characterStates })
     } catch {
       // 静默失败
@@ -436,8 +513,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   rulesDialogOpen: false,
   setRulesDialogOpen: (open) => set({ rulesDialogOpen: open }),
   async loadWorldRules() {
+    const stillCurrent = worldGuard(get)
     try {
       const worldRules = await api.getWorldRules()
+      if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
       set({ worldRules })
     } catch {
       // 静默失败
@@ -474,8 +553,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   async loadCharacters() {
+    const stillCurrent = worldGuard(get)
     try {
       const characters = await withRetry(() => api.getCharacters())
+      if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
       set({ characters })
     } catch {
       toast.error('角色列表加载失败')
@@ -509,13 +590,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
   async selectCharacter(id) {
     const character = get().characters.find((c) => c.id === id)
     if (!character) return
+    // 切换角色 = 切换对话, 中止旧对话的流
+    abortAllStreams()
+    const stillCurrent = worldGuard(get)
     // 复用该角色最近的对话, 没有则创建
     const conversations = await api.getConversations(id)
+    if (!stillCurrent()) return // 期间切了世界, 丢弃
     let conversation = conversations[0] ?? null
     if (!conversation) {
       conversation = await api.createConversation(id)
       conversations.unshift(conversation)
     }
+    if (!stillCurrent()) return
     set({ activeCharacter: character, conversations, activeConversation: conversation })
     await get().refreshMessages()
     get().loadCharacterStates()
@@ -524,7 +610,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   async refreshMessages() {
     const conv = get().activeConversation
     if (!conv) return
+    const stillCurrent = worldGuard(get)
     const messages = await api.getMessages(conv.id)
+    if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
     set({ messages })
   },
 
@@ -584,7 +672,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   async selectConversation(conversation) {
-    set({ activeConversation: conversation })
+    abortAllStreams()
+    set({ activeConversation: conversation, streaming: false })
     await get().refreshMessages()
     get().loadCharacterStates()
   },
@@ -604,6 +693,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   async deleteConversation(id) {
     try {
+      // 删除的正是进行中的对话时, 先停掉它的流
+      if (get().activeConversation?.id === id) abortAllStreams()
       await api.deleteConversation(id)
       const current = get().activeConversation
       set((s) => ({
@@ -621,10 +712,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   exitConversation() {
+    abortAllStreams()
     set({
       activeCharacter: null,
       activeConversation: null,
       messages: [],
+      streaming: false,
       streamError: null,
     })
   },
@@ -659,10 +752,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
         streamError: null,
       }))
 
+      const stream = beginStream()
       try {
         let accumulated = ''
         let finalId = ''
-        for await (const ev of api.streamGmChat(gmContent, conv.id)) {
+        for await (const ev of api.streamGmChat(gmContent, conv.id, stream.signal)) {
           if (ev.type === 'delta' && ev.text) {
             accumulated += ev.text
             set((s) => ({
@@ -693,9 +787,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }))
         }
       } catch (err) {
-        set({ streamError: err instanceof Error ? err.message : String(err) })
+        if (!isAbortError(err)) {
+          set({ streamError: err instanceof Error ? err.message : String(err) })
+        }
       } finally {
-        set({ streaming: false })
+        stream.end()
+        // 无论成功/失败: 未被真实 id 替换的占位消息必须移除,
+        // 否则 id='streaming' 会永久留在列表里 (表现为永不消失的空气泡/光标)
+        set((s) => ({
+          streaming: false,
+          messages: s.messages.some((m) => m.id === 'streaming')
+            ? s.messages.filter((m) => m.id !== 'streaming')
+            : s.messages,
+        }))
         // GM 可能修改了世界数据
         get().loadCharacters()
         get().loadWorld()
@@ -729,9 +833,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
     set((s) => ({ messages: [...s.messages, placeholder] }))
 
+    const stream = beginStream()
     try {
       let accumulated = ''
-      for await (const ev of api.streamChat(conv.id, content)) {
+      for await (const ev of api.streamChat(conv.id, content, stream.signal)) {
         if (ev.type === 'delta' && ev.text) {
           accumulated += ev.text
           set((s) => ({
@@ -745,16 +850,125 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // done: 从服务端重新拉取最终落库消息 (finally 块处理)
       }
     } catch (err) {
-      set({ streamError: err instanceof Error ? err.message : String(err) })
+      if (!isAbortError(err)) {
+        set({ streamError: err instanceof Error ? err.message : String(err) })
+      }
     } finally {
-      set({ streaming: false })
+      stream.end()
+      // 先清掉占位气泡 (refreshMessages 失败时也不会残留空消息), 再对账
+      set((s) => ({
+        streaming: false,
+        messages: s.messages.some((m) => m.id === 'streaming')
+          ? s.messages.filter((m) => m.id !== 'streaming')
+          : s.messages,
+      }))
       await get().refreshMessages()
     }
   },
 
+  async regenerateMessage() {
+    const conv = get().activeConversation
+    if (!conv || get().streaming) return
+    const msgs = get().messages
+    const last = msgs[msgs.length - 1]
+    if (!last) return
+    // 去掉末尾 AI 消息 (服务端也会删除), 用占位气泡承接新回复
+    const base =
+      last.role === 'assistant' || last.role === 'narrator' ? msgs.slice(0, -1) : msgs
+    const placeholder: ChatMessage = {
+      id: 'streaming',
+      conversationId: conv.id,
+      role: conv.mode === 'adventure' ? 'narrator' : 'assistant',
+      content: '',
+      createdAt: new Date().toISOString(),
+    }
+    set({ messages: [...base, placeholder], streaming: true, streamError: null })
+
+    const stream = beginStream()
+    try {
+      let accumulated = ''
+      for await (const ev of api.regenerate(conv.id, stream.signal)) {
+        if (ev.type === 'delta' && ev.text) {
+          accumulated += ev.text
+          set((s) => ({
+            messages: s.messages.map((m) =>
+              m.id === 'streaming' ? { ...m, content: accumulated } : m,
+            ),
+          }))
+        } else if (ev.type === 'error') {
+          set({ streamError: ev.message ?? 'unknown error' })
+        }
+      }
+    } catch (err) {
+      if (!isAbortError(err)) {
+        set({ streamError: err instanceof Error ? err.message : String(err) })
+      }
+    } finally {
+      stream.end()
+      set((s) => ({
+        streaming: false,
+        messages: s.messages.some((m) => m.id === 'streaming')
+          ? s.messages.filter((m) => m.id !== 'streaming')
+          : s.messages,
+      }))
+      await get().refreshMessages()
+    }
+  },
+
+  async editMessage(messageId, content) {
+    const conv = get().activeConversation
+    if (!conv || get().streaming) return
+    const trimmed = content.trim()
+    if (!trimmed) return
+    try {
+      const updated = await api.editMessage(conv.id, messageId, trimmed)
+      set((s) => ({
+        messages: s.messages.map((m) =>
+          m.id === messageId ? { ...m, content: updated.content } : m,
+        ),
+      }))
+      toast.success('消息已更新')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '更新消息失败')
+    }
+  },
+
+  async deleteMessage(messageId) {
+    const conv = get().activeConversation
+    if (!conv || get().streaming) return
+    try {
+      await api.deleteMessage(conv.id, messageId)
+      set((s) => ({ messages: s.messages.filter((m) => m.id !== messageId) }))
+      toast.success('消息已删除')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除消息失败')
+    }
+  },
+
+  async forkFromMessage(messageId) {
+    const conv = get().activeConversation
+    if (!conv || get().streaming) return
+    try {
+      const created = await api.forkConversation(conv.id, messageId)
+      set((s) => ({
+        conversations: [created, ...s.conversations.filter((c) => c.id !== created.id)],
+        activeConversation: created,
+        messages: [],
+        streaming: false,
+        streamError: null,
+      }))
+      await get().refreshMessages()
+      toast.success('已创建分支对话')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建分支失败')
+    }
+  },
+
   async loadGmMessages() {
+    const stillCurrent = worldGuard(get)
     try {
       const gmMessages = await withRetry(() => api.getGmMessages())
+      if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
       set({ gmMessages })
     } catch {
       toast.error('GM 消息加载失败')
@@ -762,8 +976,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   async loadGmOutcomes() {
+    const stillCurrent = worldGuard(get)
     try {
       const gmOutcomes = await withRetry(() => api.getGmOutcomes())
+      if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
       set({ gmOutcomes })
     } catch {
       toast.error('GM 结局加载失败')
@@ -805,9 +1021,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
     set((s) => ({ gmMessages: [...s.gmMessages, placeholder] }))
 
+    const stream = beginStream()
     try {
       let accumulated = ''
-      for await (const ev of api.streamGmChat(content)) {
+      for await (const ev of api.streamGmChat(content, undefined, stream.signal)) {
         if (ev.type === 'delta' && ev.text) {
           accumulated += ev.text
           set((s) => ({
@@ -822,8 +1039,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
         }
       }
     } catch (err) {
-      set({ gmError: err instanceof Error ? err.message : String(err) })
+      if (!isAbortError(err)) {
+        set({ gmError: err instanceof Error ? err.message : String(err) })
+      }
     } finally {
+      stream.end()
       set({ gmStreaming: false, gmThinking: false })
       await get().loadGmMessages()
       // GM skill 可能修改了角色/地图/状态, 刷新前端数据
@@ -834,8 +1054,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   async loadWorld() {
+    const stillCurrent = worldGuard(get)
     try {
       const map = await withRetry(() => api.getWorld())
+      if (!stillCurrent()) return // 世界已切换, 丢弃过期响应
       set({ locations: map.locations, connections: map.connections })
     } catch {
       toast.error('世界地图加载失败')
@@ -879,3 +1101,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((s) => ({ directorMode: !s.directorMode }))
   },
 }))
+
+// api 层不再自持当前世界, 从这里读取唯一数据源 ——
+// 彻底消除 activeWorld 与 x-world-id 双数据源不同步的可能
+// (此前 loadWorlds 的兜底分支就漏了同步, 会导致 UI 显示 A、请求打向 B)
+bindWorldSource(() => useAppStore.getState().activeWorld?.id ?? null)

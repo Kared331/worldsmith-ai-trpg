@@ -5,6 +5,7 @@ import { db, schema } from '../db/index.js'
 import { readCharCard, writeCharCard, toCharCard, fromCharCard } from '../cards/png.js'
 import { randomUUID } from 'node:crypto'
 import { getWorldId } from '../lib/world-context.js'
+import { scopedCharacter } from '../lib/scope.js'
 
 export const cardsRouter = Router()
 
@@ -46,11 +47,9 @@ cardsRouter.post('/import', async (req, res) => {
 
 // 导出: 角色 → PNG 下载
 cardsRouter.get('/export/:id', async (req, res) => {
-  const character = await db.query.characters.findFirst({
-    where: eq(schema.characters.id, req.params.id),
-  })
+  const character = await scopedCharacter(req.params.id, getWorldId(req))
   if (!character) {
-    res.status(404).json({ error: 'character not found' })
+    res.status(404).json({ error: 'character not found in current world' })
     return
   }
   const card = toCharCard(character)

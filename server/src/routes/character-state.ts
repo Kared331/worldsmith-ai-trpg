@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { eq, and, inArray } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import { getWorldId } from '../lib/world-context.js'
+import { scopedCharacter } from '../lib/scope.js'
 
 const stateUpsertSchema = z.object({
   key: z.string().min(1).max(100),
@@ -64,15 +65,9 @@ characterStateRouter.put('/:characterId', async (req, res) => {
   const characterId = req.params.characterId
 
   // 校验角色存在且属于当前世界 (或为角色库 null)
-  const character = await db.query.characters.findFirst({
-    where: eq(schema.characters.id, characterId),
-  })
+  const character = await scopedCharacter(characterId, worldId)
   if (!character) {
-    res.status(404).json({ error: 'character not found' })
-    return
-  }
-  if (character.worldId !== null && character.worldId !== worldId) {
-    res.status(403).json({ error: 'character does not belong to current world' })
+    res.status(404).json({ error: 'character not found in current world' })
     return
   }
 

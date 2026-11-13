@@ -11,10 +11,11 @@ export interface MatchedLore {
   priority: number
 }
 
-/** 扫描文本命中启用的 Lorebook 条目 (大小写不敏感, 包含匹配) */
-export async function matchLore(texts: string[]): Promise<MatchedLore[]> {
+/** 扫描文本命中启用的 Lorebook 条目 (大小写不敏感, 包含匹配)
+ *  必须按 worldId 过滤: 世界书按世界隔离, 否则 A 世界的设定会注入 B 世界的对话 */
+export async function matchLore(texts: string[], worldId: string): Promise<MatchedLore[]> {
   const entries = await db.query.loreEntries.findMany({
-    where: (l, { eq }) => eq(l.enabled, true),
+    where: (l, { and, eq }) => and(eq(l.enabled, true), eq(l.worldId, worldId)),
   })
   if (entries.length === 0) return []
 

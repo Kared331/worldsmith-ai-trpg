@@ -146,6 +146,26 @@ export function LlmConfigPanel() {
     setConfig({ ...config, defaults: nextDefaults })
   }
 
+  /**
+   * 切换流式输出。
+   * 不能写成 `handleDefaultsChange(...)` + `setTimeout(handleSaveDefaults, 0)`:
+   * handleSaveDefaults 闭包捕获的是本次 render 的 config, 此时 streaming 尚未更新,
+   * 会把旧值提交给服务端 (表现为"切换不生效")。这里直接算出新值再提交。
+   */
+  async function handleToggleStreaming() {
+    if (!config) return
+    const prev = config.defaults
+    const next = { ...prev, streaming: !prev.streaming }
+    setConfig({ ...config, defaults: next })
+    try {
+      const fresh = await api.updateDefaults(next)
+      setConfig(fresh)
+    } catch (err) {
+      setConfig({ ...config, defaults: prev }) // 失败回滚
+      toast.error(err instanceof Error ? err.message : '保存失败')
+    }
+  }
+
   async function handleSaveDefaults() {
     if (!config) return
     try {
@@ -238,10 +258,7 @@ export function LlmConfigPanel() {
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-input text-muted-foreground',
                 )}
-                onClick={() => {
-                  handleDefaultsChange({ streaming: !config.defaults.streaming })
-                  setTimeout(handleSaveDefaults, 0)
-                }}
+                onClick={handleToggleStreaming}
               >
                 {config.defaults.streaming ? '已开启' : '已关闭'}
               </button>

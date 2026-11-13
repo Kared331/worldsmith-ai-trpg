@@ -1,9 +1,11 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { asc, eq, and, inArray } from 'drizzle-orm'
+
 import { db, schema } from '../db/index.js'
 import { gmService } from '../gm/service.js'
 import { getWorldId } from '../lib/world-context.js'
+import { scopedGmOutcome } from '../lib/scope.js'
 
 const gmChatSchema = z.object({
   content: z.string().min(1).max(20000),
@@ -17,11 +19,20 @@ const outcomeUpdateSchema = z.object({
 
 export const gmRouter = Router()
 
-// GM 对话历史 (按世界隔离)
+// GM 对话历史 (按世界隔离, 按 mode 过滤)
+// 默认只返回 mode='meta' (GmPanel 元对话), 传 ?mode=story 返回剧情模式历史, ?mode=all 返回全部
 gmRouter.get('/messages', async (req, res) => {
   const worldId = getWorldId(req)
+  const modeParam = typeof req.query.mode === 'string' ? req.query.mode : 'meta'
+  const where =
+    modeParam === 'all'
+      ? eq(schema.gmMessages.worldId, worldId)
+      : and(
+          eq(schema.gmMessages.worldId, worldId),
+          eq(schema.gmMessages.mode, modeParam as 'meta' | 'story'),
+        )
   const rows = await db.query.gmMessages.findMany({
-    where: eq(schema.gmMessages.worldId, worldId),
+    where,
     orderBy: [asc(schema.gmMessages.createdAt)],
   })
   res.json(rows)
@@ -61,11 +72,9 @@ gmRouter.put('/outcomes/:id', async (req, res) => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
     return
   }
-  const existing = await db.query.gmOutcomes.findFirst({
-    where: eq(schema.gmOutcomes.id, req.params.id),
-  })
+  const existing = await scopedGmOutcome(req.params.id, getWorldId(req))
   if (!existing) {
-    res.status(404).json({ error: 'outcome not found' })
+    res.status(404).json({ error: 'outcome not found in current world' })
     return
   }
   await db
@@ -105,8 +114,8 @@ gmRouter.post('/chat', async (req, res) => {
     // 有 conversationId → 剧情模式: GM 回复注入主对话框 (narrator 消息)
     // 无 conversationId → 元对话模式: GM 面板纯幕后操作
     const stream = conversationId
-      ? gmService.streamToConversation(content, worldId, conversationId)
-      : gmService.streamMessage(content, worldId)
+      ? gmService.streamToConversation(content, worldId, conversationId, abort.signal)
+      : gmService.streamMessage(content, worldId, abort.signal)
     for await (const ev of stream) {
       if (res.writableEnded) break
       res.write(`data: ${JSON.stringify(ev)}\n\n`)

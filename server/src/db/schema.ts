@@ -59,6 +59,10 @@ export const conversations = sqliteTable(
     title: text('title'),
     /** 记忆提取进度: 上次提取到的消息 id (null = 未提取) */
     extractedThrough: text('extracted_through'),
+    /** 滚动剧情摘要: 覆盖 summaryThrough 及之前的所有消息 */
+    summary: text('summary').notNull().default(''),
+    /** 摘要进度: 已摘要到的消息 id (null = 未摘要) */
+    summaryThrough: text('summary_through'),
     /** 所属世界 ID (必填, 对话必然属于某世界) */
     worldId: text('world_id')
       .notNull()
@@ -140,9 +144,20 @@ export const gmMessages = sqliteTable(
       .notNull()
       .default('default-world')
       .references(() => worlds.id, { onDelete: 'cascade' }),
+    /**
+     * 消息来源模式, 隔离元对话与剧情模式:
+     * - 'meta':  GmPanel 单独窗口的元对话 (GM agent 问答)
+     * - 'story': 主对话 /GM 触发的剧情模式 (GM 以 narrator 身份注入主对话)
+     *
+     * 两种模式各自只拉取自己 mode 的历史, 防止互相污染
+     */
+    mode: text('mode', { enum: ['meta', 'story'] }).notNull().default('meta'),
     createdAt: text('created_at').notNull(),
   },
-  (t) => [index('gm_messages_world_idx').on(t.worldId)],
+  (t) => [
+    index('gm_messages_world_idx').on(t.worldId),
+    index('gm_messages_mode_idx').on(t.mode),
+  ],
 )
 
 // ---------- GM 结局记录: 代码引擎判定 vs GM 叙事, 玩家可切换 ----------

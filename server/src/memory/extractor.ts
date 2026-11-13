@@ -3,6 +3,7 @@ import { db, schema } from '../db/index.js'
 import { chat } from '../llm/client.js'
 import { resolveRole } from '../llm/config.js'
 import { createKnowledgeEntry } from './service.js'
+import { extractJsonRobust } from '../lib/json-extract.js'
 import { loadGroupCharacters } from '../chat/context.js'
 import { autoEvolvePersonality } from '../services/trait.js'
 import type { Character, Message } from '../db/schema.js'
@@ -45,17 +46,6 @@ const GROUP_EXTRACT_PROMPT = [
   '{"<角色名1>": {"events": [...], "traits": [...], "relationships": [...]}, "<角色名2>": {...}}',
   '不要输出任何其他内容。',
 ].join('\n')
-
-function extractJson(raw: string): Record<string, unknown> {
-  const start = raw.indexOf('{')
-  const end = raw.lastIndexOf('}')
-  if (start === -1 || end === -1 || end <= start) return {}
-  try {
-    return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>
-  } catch {
-    return {}
-  }
-}
 
 /** 写入一组记忆条目 (event/trait/relationship) 到指定角色 */
 async function writeMemories(
@@ -110,7 +100,10 @@ async function extractSingle(
     return
   }
 
-  const parsed = extractJson(resp) as { events?: unknown; traits?: unknown; relationships?: unknown }
+  const parsed = extractJsonRobust<{ events?: unknown; traits?: unknown; relationships?: unknown }>(
+    resp,
+    {},
+  ).value
   const ts = new Date().toISOString().slice(0, 16)
   const written = await writeMemories(character.id, parsed, ts)
   console.log(`[memory] extracted ${msgs.length} msgs for "${character.name}": ${written} entries`)
@@ -164,7 +157,7 @@ async function extractGroup(
     return
   }
 
-  const parsed = extractJson(resp)
+  const parsed = extractJsonRobust<Record<string, unknown>>(resp, {}).value
   const ts = new Date().toISOString().slice(0, 16)
   // 仅写入实际发言过的角色 (在群成员中匹配名字)
   let totalWritten = 0

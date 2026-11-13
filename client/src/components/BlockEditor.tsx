@@ -22,6 +22,106 @@ function genId(): string {
   return `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 }
 
+// ============================================================
+// RPG 预设板块模板 — 一键添加标准 RPG 设定板块
+// ============================================================
+interface BlockPreset {
+  title: string
+  type: 'custom'
+  fields: Array<{ label: string; value: string; kind: 'narrative' | 'code' }>
+}
+
+const RPG_BLOCK_PRESETS: BlockPreset[] = [
+  {
+    title: '战斗属性',
+    type: 'custom',
+    fields: [
+      { label: '等级', value: '1', kind: 'code' },
+      { label: '生命值', value: '100/100', kind: 'code' },
+      { label: '法力值', value: '50/50', kind: 'code' },
+      { label: '攻击力', value: '10', kind: 'code' },
+      { label: '防御力', value: '5', kind: 'code' },
+      { label: '速度', value: '15', kind: 'code' },
+      { label: '幸运', value: '5', kind: 'code' },
+    ],
+  },
+  {
+    title: '技能',
+    type: 'custom',
+    fields: [
+      { label: '主动技能', value: '', kind: 'narrative' },
+      { label: '被动技能', value: '', kind: 'narrative' },
+      { label: '终极技能', value: '', kind: 'narrative' },
+    ],
+  },
+  {
+    title: '背景故事',
+    type: 'custom',
+    fields: [
+      { label: '出身', value: '', kind: 'narrative' },
+      { label: '重要事件', value: '', kind: 'narrative' },
+      { label: '动机', value: '', kind: 'narrative' },
+      { label: '秘密', value: '', kind: 'narrative' },
+    ],
+  },
+  {
+    title: '人际关系',
+    type: 'custom',
+    fields: [
+      { label: '家人', value: '', kind: 'narrative' },
+      { label: '盟友', value: '', kind: 'narrative' },
+      { label: '敌人', value: '', kind: 'narrative' },
+      { label: '恋人', value: '', kind: 'narrative' },
+    ],
+  },
+  {
+    title: '装备',
+    type: 'custom',
+    fields: [
+      { label: '武器', value: '', kind: 'narrative' },
+      { label: '防具', value: '', kind: 'narrative' },
+      { label: '饰品', value: '', kind: 'narrative' },
+      { label: '背包', value: '', kind: 'narrative' },
+    ],
+  },
+  {
+    title: '身体数据',
+    type: 'custom',
+    fields: [
+      { label: '年龄', value: '', kind: 'narrative' },
+      { label: '身高', value: '', kind: 'narrative' },
+      { label: '体重', value: '', kind: 'narrative' },
+      { label: '体型', value: '', kind: 'narrative' },
+      { label: '肤色', value: '', kind: 'narrative' },
+      { label: '发色', value: '', kind: 'narrative' },
+      { label: '瞳色', value: '', kind: 'narrative' },
+      { label: '体毛特征', value: '', kind: 'narrative' },
+    ],
+  },
+  {
+    title: '身份地位',
+    type: 'custom',
+    fields: [
+      { label: '职业', value: '', kind: 'narrative' },
+      { label: '阵营', value: '', kind: 'narrative' },
+      { label: '声望', value: '', kind: 'narrative' },
+      { label: '财富', value: '', kind: 'narrative' },
+      { label: '所属组织', value: '', kind: 'narrative' },
+    ],
+  },
+  {
+    title: '心理特征',
+    type: 'custom',
+    fields: [
+      { label: '性格', value: '', kind: 'narrative' },
+      { label: '价值观', value: '', kind: 'narrative' },
+      { label: '恐惧', value: '', kind: 'narrative' },
+      { label: '欲望', value: '', kind: 'narrative' },
+      { label: '口头禅', value: '', kind: 'narrative' },
+    ],
+  },
+]
+
 interface Props {
   initial: CharacterBlock[]
   /** 角色 ID (自然语言编辑时需要调用后端 LLM) */
@@ -76,6 +176,25 @@ export function BlockEditor({ initial, characterId, onSave, onClose }: Props) {
     ])
   }
 
+  function addPresetBlock(preset: BlockPreset) {
+    setBlocks((bs) => [
+      ...bs,
+      {
+        id: genId(),
+        type: 'custom',
+        title: preset.title,
+        order: bs.length,
+        fields: preset.fields.map((f, i) => ({
+          key: `f${i}`,
+          label: f.label,
+          value: f.value,
+          kind: f.kind,
+        })),
+      },
+    ])
+    toast.success(`已添加「${preset.title}」板块`)
+  }
+
   function addField(blockId: string) {
     setBlocks((bs) =>
       bs.map((b) =>
@@ -94,9 +213,16 @@ export function BlockEditor({ initial, characterId, onSave, onClose }: Props) {
 
   async function handleSave() {
     setSaving(true)
-    const ordered = blocks.map((b, i) => ({ ...b, order: i }))
-    await onSave(ordered)
-    setSaving(false)
+    try {
+      const ordered = blocks.map((b, i) => ({ ...b, order: i }))
+      await onSave(ordered)
+    } catch (err) {
+      // 必须捕获: onSave 内部失败会 rethrow, 否则 setSaving(false) 永不执行
+      // 按钮会永久停在"保存中…"且 disabled
+      toast.error(err instanceof Error ? err.message : '保存失败')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // 复制 JSON 到剪贴板
@@ -349,8 +475,26 @@ export function BlockEditor({ initial, characterId, onSave, onClose }: Props) {
 
         <div className="flex gap-2">
           <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={addBlock}>
-            <Plus className="h-3 w-3" /> 添加板块
+            <Plus className="h-3 w-3" /> 添加空板块
           </Button>
+          {/* RPG 预设板块下拉 */}
+          <div className="group relative">
+            <Button size="sm" variant="outline" className="text-xs">
+              <Sparkles className="h-3 w-3 text-primary" /> RPG 预设
+            </Button>
+            <div className="absolute bottom-full right-0 z-20 mb-1 hidden w-44 rounded-md border border-border bg-popover p-1 shadow-md group-hover:block">
+              {RPG_BLOCK_PRESETS.map((preset) => (
+                <button
+                  key={preset.title}
+                  className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-secondary"
+                  onClick={() => addPresetBlock(preset)}
+                >
+                  {preset.title}
+                  <span className="ml-1 text-muted-foreground">({preset.fields.length})</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="flex gap-2">

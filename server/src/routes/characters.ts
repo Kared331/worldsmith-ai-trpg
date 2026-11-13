@@ -7,8 +7,10 @@ import { chatService } from '../chat/service.js'
 import { suggestTrait } from '../services/trait.js'
 import { asyncHandler } from '../lib/http-error.js'
 import { getWorldId } from '../lib/world-context.js'
+import { scopedCharacter } from '../lib/scope.js'
 import { chat } from '../llm/client.js'
 import { resolveRole } from '../llm/config.js'
+import { extractJsonRobust } from '../lib/json-extract.js'
 import type { CharacterBlock } from '@worldsmith/shared'
 
 const characterCreateSchema = z.object({
@@ -71,11 +73,9 @@ charactersRouter.post('/', async (req, res) => {
 
 // 详情
 charactersRouter.get('/:id', async (req, res) => {
-  const row = await db.query.characters.findFirst({
-    where: eq(schema.characters.id, req.params.id),
-  })
+  const row = await scopedCharacter(req.params.id, getWorldId(req))
   if (!row) {
-    res.status(404).json({ error: 'character not found' })
+    res.status(404).json({ error: 'character not found in current world' })
     return
   }
   res.json(row)
@@ -88,11 +88,9 @@ charactersRouter.put('/:id', async (req, res) => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
     return
   }
-  const existing = await db.query.characters.findFirst({
-    where: eq(schema.characters.id, req.params.id),
-  })
+  const existing = await scopedCharacter(req.params.id, getWorldId(req))
   if (!existing) {
-    res.status(404).json({ error: 'character not found' })
+    res.status(404).json({ error: 'character not found in current world' })
     return
   }
   await db
@@ -108,6 +106,11 @@ charactersRouter.put('/:id', async (req, res) => {
 
 // 删除
 charactersRouter.delete('/:id', async (req, res) => {
+  const existing = await scopedCharacter(req.params.id, getWorldId(req))
+  if (!existing) {
+    res.status(404).json({ error: 'character not found in current world' })
+    return
+  }
   const result = await db
     .delete(schema.characters)
     .where(eq(schema.characters.id, req.params.id))
@@ -123,6 +126,11 @@ charactersRouter.delete('/:id', async (req, res) => {
 charactersRouter.post(
   '/:id/suggest-trait',
   asyncHandler(async (req, res) => {
+    const existing = await scopedCharacter(req.params.id, getWorldId(req))
+    if (!existing) {
+      res.status(404).json({ error: 'character not found in current world' })
+      return
+    }
     const result = await suggestTrait(req.params.id)
     res.json(result)
   }),
@@ -141,11 +149,9 @@ charactersRouter.post(
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'invalid input' })
       return
     }
-    const character = await db.query.characters.findFirst({
-      where: eq(schema.characters.id, req.params.id),
-    })
+    const character = await scopedCharacter(req.params.id, getWorldId(req))
     if (!character) {
-      res.status(404).json({ error: 'character not found' })
+      res.status(404).json({ error: 'character not found in current world' })
       return
     }
 
@@ -194,18 +200,10 @@ charactersRouter.post(
       return
     }
 
-    // 提取 JSON
-    const jsonStart = resp.indexOf('[')
-    const jsonEnd = resp.lastIndexOf(']')
-    if (jsonStart === -1 || jsonEnd === -1) {
+    // 提取 JSON (容错: 支持 markdown 代码块 / 输出截断 / 尾逗号)
+    const { value: newBlocks, parseOk } = extractJsonRobust<CharacterBlock[]>(resp, [])
+    if (!parseOk) {
       res.status(500).json({ error: 'LLM 返回格式错误', raw: resp.slice(0, 500) })
-      return
-    }
-    let newBlocks: CharacterBlock[]
-    try {
-      newBlocks = JSON.parse(resp.slice(jsonStart, jsonEnd + 1))
-    } catch {
-      res.status(500).json({ error: 'JSON 解析失败', raw: resp.slice(0, 500) })
       return
     }
 

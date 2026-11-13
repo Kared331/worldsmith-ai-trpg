@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Users, MessageSquare, Dices, LogOut, ChevronDown, Check, Bot, Pencil, Trash2 } from 'lucide-react'
+import { Send, Users, MessageSquare, Dices, LogOut, ChevronDown, Check, Bot, Pencil, Trash2, RefreshCw, GitBranch } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
@@ -17,6 +17,16 @@ const MODE_OPTIONS: Array<{ value: ConvMode; label: string; desc: string }> = [
   { value: 'group', label: '群聊剧场', desc: '多角色同场景群聊' },
 ]
 
+// 角色头像色板 + 流式光标 — 共享自 character-color 模块
+import { colorForName } from '../lib/character-color'
+
+// 流式打字机光标 (竖线闪烁, 比 ▌ 字符更流畅)
+function StreamingCursor() {
+  return (
+    <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-primary align-middle" />
+  )
+}
+
 export function ChatPanel() {
   const {
     activeCharacter,
@@ -26,6 +36,10 @@ export function ChatPanel() {
     streamError,
     sendMessage,
     refreshMessages,
+    regenerateMessage,
+    editMessage,
+    deleteMessage,
+    forkFromMessage,
     exitConversation,
     characters,
     switchConversationMode,
@@ -48,6 +62,27 @@ export function ChatPanel() {
   const [renameValue, setRenameValue] = useState('')
   // 删除确认对话框
   const [deleteOpen, setDeleteOpen] = useState(false)
+
+  // 消息编辑态
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingText, setEditingText] = useState('')
+
+  function startEdit(m: { id: string; content: string }) {
+    setEditingId(m.id)
+    setEditingText(m.content)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditingText('')
+  }
+
+  async function saveEdit() {
+    if (!editingId) return
+    await editMessage(editingId, editingText)
+    setEditingId(null)
+    setEditingText('')
+  }
 
   useEffect(() => {
     refreshMessages()
@@ -249,15 +284,55 @@ export function ChatPanel() {
               : '尚未选择角色。'}
           </div>
         )}
-        {messages.map((m) => {
+        {messages.map((m, idx) => {
           const isUser = m.role === 'user'
           const isNarrator = m.role === 'narrator'
           const isGmCommand = isUser && m.speakerName === '__gm_command__'
+          // 双条件: 仅凭 id 判断的话, 流异常结束时占位消息会留下永不消失的光标
+          const isStreaming = m.id === 'streaming' && streaming
+          // 本地临时消息 (尚未落库) 不支持编辑/删除
+          const canOperate = !m.id.startsWith('local-') && m.id !== 'streaming'
+          const isLastAi = idx === messages.length - 1 && !isUser
+          // 匹配角色头像 (群聊通过 speakerName, 单角色用 activeCharacter)
+          const speakerChar =
+            !isUser && !isNarrator
+              ? characters.find((c) => c.name === m.speakerName) ?? activeCharacter
+              : null
+          const speakerColor = speakerChar?.name ? colorForName(speakerChar.name) : null
           return (
             <div
               key={m.id}
-              className={cn('flex', isUser && !isGmCommand ? 'justify-end' : 'justify-start')}
+              className={cn(
+                'group flex gap-2 msg-fade-in',
+                isUser && !isGmCommand ? 'justify-end' : 'justify-start',
+              )}
             >
+              {/* 左侧头像 (非用户消息) */}
+              {!isUser && !isGmCommand && (
+                <div className="mt-0.5 shrink-0">
+                  {isNarrator ? (
+                    <div className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-primary">
+                      <Dices className="size-4" />
+                    </div>
+                  ) : speakerChar?.avatar ? (
+                    <img
+                      src={speakerChar.avatar}
+                      alt=""
+                      className="size-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div
+                      className={cn(
+                        'flex size-8 items-center justify-center rounded-full text-xs font-semibold text-white',
+                        speakerColor?.bg ?? 'bg-primary',
+                      )}
+                    >
+                      {speakerChar?.name?.charAt(0) ?? '?'}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div
                 className={cn(
                   'max-w-[75%] whitespace-pre-wrap px-3 py-2 text-sm',
@@ -266,7 +341,7 @@ export function ChatPanel() {
                     : isUser
                       ? 'rounded-lg bg-secondary text-secondary-foreground'
                       : isNarrator
-                        ? 'border-l-2 border-primary bg-transparent italic text-foreground'
+                        ? 'rounded-lg border-l-2 border-primary bg-transparent italic text-foreground'
                         : 'rounded-lg border border-border bg-card text-card-foreground',
                 )}
               >
@@ -277,24 +352,86 @@ export function ChatPanel() {
                   </div>
                 )}
                 {isNarrator && (
-                  <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold not-italic tracking-wide text-primary">
-                    <Dices className="size-3.5" />
+                  <div className="mb-1 text-xs font-semibold not-italic tracking-wide text-primary">
                     GM 叙事
                   </div>
                 )}
-                {!isUser && !isNarrator && m.speakerName && (
-                  <div className="mb-0.5 text-xs font-semibold text-muted-foreground">
-                    {m.speakerName}
+                {!isUser && !isNarrator && speakerChar?.name && (
+                  <div className={cn('mb-0.5 text-xs font-semibold', speakerColor?.text)}>
+                    {speakerChar.name}
                   </div>
                 )}
-                {m.content ? (
-                  <MessageContent content={m.content} />
-                ) : m.id === 'streaming' ? (
-                  '…'
+
+                {editingId === m.id ? (
+                  <div className="min-w-[16rem] space-y-1.5">
+                    <Textarea
+                      className="min-h-24 text-sm"
+                      value={editingText}
+                      onChange={(e) => setEditingText(e.target.value)}
+                    />
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="ghost" onClick={cancelEdit}>
+                        取消
+                      </Button>
+                      <Button size="sm" onClick={saveEdit}>
+                        保存
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  ''
+                  <>
+                    {m.content ? (
+                      <MessageContent content={m.content} />
+                    ) : isStreaming ? (
+                      <span className="text-muted-foreground">…</span>
+                    ) : null}
+                    {isStreaming && <StreamingCursor />}
+                  </>
                 )}
-                {m.id === 'streaming' && <span className="ml-0.5 animate-pulse">▌</span>}
+
+                {canOperate && !streaming && editingId !== m.id && (
+                  <div
+                    className={cn(
+                      'mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100',
+                      isUser && !isGmCommand ? 'justify-end' : 'justify-start',
+                    )}
+                  >
+                    {!isUser && isLastAi && (
+                      <button
+                        type="button"
+                        title="重新生成"
+                        onClick={() => regenerateMessage()}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <RefreshCw className="size-3" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title="从此分支出新对话"
+                      onClick={() => forkFromMessage(m.id)}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <GitBranch className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      title="编辑"
+                      onClick={() => startEdit(m)}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <Pencil className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      title="删除"
+                      onClick={() => deleteMessage(m.id)}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )

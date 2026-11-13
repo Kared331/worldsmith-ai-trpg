@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, or, like } from 'drizzle-orm'
+import { and, eq, or, like, desc, inArray } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import type { KnowledgeEntry } from '../db/schema.js'
 
@@ -90,4 +90,37 @@ export async function searchKnowledge(
   })
   scored.sort((a, b) => b.score - a.score)
   return scored.slice(0, topK).map(({ entry, score }) => ({ entry, score }))
+}
+
+/**
+ * 取用于对话上下文注入的记忆条目: 角色记忆 + 世界记忆, 按重要度倒序。
+ *
+ * 角色记忆按 ownerId 严格隔离: 传单个角色就是 1v1 对话,
+ * 传多个角色就是群聊 (只取在场成员的私人记忆, 不会串到不在场角色)。
+ *
+ * 这里刻意不做关键词检索: 剧情对话与记忆条目的词面重合度低, LIKE 匹配
+ * 命中率不稳定, 很可能一条都捞不到。固定注入"最重要的最近 N 条"更可靠,
+ * 也便于控制 token 预算。
+ */
+export async function getRecentMemories(opts: {
+  characterIds: string[]
+  worldId: string
+  limit?: number
+}): Promise<KnowledgeEntry[]> {
+  const limit = opts.limit ?? 6
+  if (opts.characterIds.length === 0) return []
+  return db.query.knowledgeEntries.findMany({
+    where: or(
+      and(
+        eq(schema.knowledgeEntries.scope, 'character'),
+        inArray(schema.knowledgeEntries.ownerId, opts.characterIds),
+      ),
+      and(
+        eq(schema.knowledgeEntries.scope, 'world'),
+        eq(schema.knowledgeEntries.ownerId, opts.worldId),
+      ),
+    ),
+    orderBy: [desc(schema.knowledgeEntries.importance), desc(schema.knowledgeEntries.createdAt)],
+    limit,
+  })
 }

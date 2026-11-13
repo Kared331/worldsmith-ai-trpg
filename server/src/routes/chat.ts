@@ -28,7 +28,8 @@ chatRouter.post('/', async (req, res) => {
     'X-Accel-Buffering': 'no',
   })
 
-  // 客户端断开时中止 LLM 请求
+  // 客户端断开时中止 LLM 请求 (此前 abort.signal 从未传出, 是死代码:
+  // 关闭页面后服务端仍会跑完整个生成过程并继续计费)
   const abort = new AbortController()
   req.on('close', () => abort.abort())
 
@@ -36,6 +37,7 @@ chatRouter.post('/', async (req, res) => {
     for await (const ev of chatService.streamMessage(
       parsed.data.conversationId,
       parsed.data.content,
+      abort.signal,
     )) {
       if (res.writableEnded) break
       res.write(`data: ${JSON.stringify(ev)}\n\n`)

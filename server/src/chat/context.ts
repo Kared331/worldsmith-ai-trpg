@@ -3,6 +3,7 @@ import { eq, asc, inArray } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import type { Character, Conversation, Message } from '../db/schema.js'
 import type { ChatMsg } from '../llm/client.js'
+import { getPrompts, renderTemplate } from './prompts.js'
 
 // ============================================================
 // 角色块缓存: 角色卡 → 注入文本, 内容 hash 指纹, 变化才重编译
@@ -87,27 +88,14 @@ export function cacheSize(): number {
   return cache.size
 }
 
-/** 文本标记格式指令 (SillyTavern 风格, 注入到所有对话模式) */
-const FORMAT_GUIDE = [
-  '【输出格式】使用以下标记语法增强表现力：',
-  '- 动作/心理描写用 *星号* 包裹，如 *她微微一笑*',
-  '- 台词用中文引号「」或""包裹，如 "你好"',
-  '- 重点强调用 **双星号** 包裹',
-  '- 出戏/元信息用 ((双括号)) 包裹',
-].join('\n')
-
-/** 组装 system prompt: 角色扮演指令 + 角色块 */
+/** 组装 system prompt: 角色扮演指令 + 角色块 (模板见 server/prompts.json) */
 export function buildSystemPrompt(character: Character): string {
-  const block = getCharacterBlock(character)
-  return [
-    `你正在角色扮演游戏中扮演"${character.name}"。`,
-    '请完全沉浸于角色，始终保持人设，用第一人称回应。',
-    '永远不要跳出角色，不要提及你是AI或语言模型，不要解释你的行为。',
-    '',
-    FORMAT_GUIDE,
-    '',
-    block,
-  ].join('\n')
+  const { chat, formatGuide } = getPrompts()
+  return renderTemplate(chat, {
+    name: character.name,
+    formatGuide,
+    block: getCharacterBlock(character),
+  })
 }
 
 // ============================================================
@@ -153,16 +141,12 @@ export async function assembleGroupContext(
     throw new Error('group conversation needs at least 2 characters')
   }
   const blocks = chars.map((c) => getCharacterBlock(c))
-  const system = [
-    `你在一个群聊中，在场角色: ${chars.map((c) => c.name).join('、')}。`,
-    '每次回复时，从在场角色中选择一个最适合回应当前对话的角色，以「角色名: 内容」格式输出。',
-    '尽量让不同角色轮流发言，不要连续让同一角色说两次。',
-    '可以描写动作或场景，但保持角色扮演，不要跳出角色。',
-    '',
-    FORMAT_GUIDE,
-    '',
-    ...blocks.map((b, i) => `【角色 ${chars[i].name}】\n${b}`),
-  ].join('\n\n')
+  const { group, formatGuide } = getPrompts()
+  const system = renderTemplate(group, {
+    memberNames: chars.map((c) => c.name).join('、'),
+    formatGuide,
+    memberBlocks: blocks.map((b, i) => `【角色 ${chars[i].name}】\n${b}`).join('\n\n'),
+  })
 
   const msgs: ChatMsg[] = [{ role: 'system', content: system }]
   for (const m of history) {
@@ -183,18 +167,13 @@ export function assembleAdventureContext(
   character: Character,
   history: Message[],
 ): AssembledContext {
-  const system = [
-    `你是一个文字冒险游戏的 Game Master。玩家扮演的角色是「${character.name}」（${character.personality || '无设定'}）。`,
-    '你负责：',
-    '1. 用第二人称叙述场景、环境与事件（"你推开酒馆的门，一股麦酒味扑面而来..."）',
-    '2. 扮演所有 NPC 并与玩家对话（NPC 台词用「角色名:」标注）',
-    '3. 裁定玩家行动的结果，必要时设置合理的挑战或意外',
-    '4. 保持故事连贯，每次回应 2-4 段；描述玩家所见所感，但绝不要替玩家做决定',
-    '',
-    FORMAT_GUIDE,
-    '',
-    `【玩家角色信息】\n${getCharacterBlock(character)}`,
-  ].join('\n')
+  const { adventure, formatGuide } = getPrompts()
+  const system = renderTemplate(adventure, {
+    name: character.name,
+    personality: character.personality || '无设定',
+    formatGuide,
+    block: getCharacterBlock(character),
+  })
 
   const msgs: ChatMsg[] = [{ role: 'system', content: system }]
   for (const m of history) {
@@ -305,6 +284,10 @@ export async function assembleContext(
     const systemMsg = result.msgs.find((m) => m.role === 'system')
     if (systemMsg) {
       systemMsg.content = `${prefixParts.join('\n\n')}\n\n${systemMsg.content}`
+      // 回写 result.system, 使 system 与 msgs[0].content 恒等。
+      // 否则后续注入 (lore / 记忆) 若以 system 为基底覆盖 msgs[0], 会静默丢掉
+      // 刚拼进去的【玩家身份】【世界规则】
+      result.system = systemMsg.content
     }
   }
   return result

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import {
-  getConfig,
+  getRawConfig,
   resolveRole,
   saveConfig,
   scanProviderModels,
@@ -12,7 +12,11 @@ import { LlmError } from '../llm/client.js'
 
 export const llmRouter = Router()
 
-/** 配置脱敏: 不泄露 apiKey 明文 */
+/**
+ * 配置脱敏: 不泄露 apiKey 明文。
+ * 用未解析配置判断"是否已配置" —— 这样 ${env:XXX} 占位符也会被识别为已设置,
+ * 与前端回填逻辑 (见 PUT /config) 保持一致。
+ */
 function sanitizeConfig(cfg: LlmConfig): LlmConfig {
   return {
     ...cfg,
@@ -23,9 +27,14 @@ function sanitizeConfig(cfg: LlmConfig): LlmConfig {
   }
 }
 
+/** 响应统一用未解析配置脱敏 (占位符视为"已配置") */
+function sanitizedResponse(): LlmConfig {
+  return sanitizeConfig(getRawConfig())
+}
+
 // 查看配置 (apiKey 脱敏)
 llmRouter.get('/config', (_req, res) => {
-  res.json(sanitizeConfig(getConfig()))
+  res.json(sanitizedResponse())
 })
 
 // 各角色当前解析到的端点状态
@@ -85,21 +94,23 @@ llmRouter.put('/config', (req, res) => {
     return
   }
   try {
-    // 前端提交的是脱敏后的配置 (apiKey 为 "***set***")。
-    // 保存时必须恢复当前真实 key (占位符或明文), 否则会把掩码值写回配置文件导致认证失败
-    const current = getConfig()
+    // 前端提交的是脱敏后的配置 (apiKey 为 "***set***" 或空串)。
+    // 必须以未解析配置 (getRawConfig) 为基准恢复, 才能保住 ${env:XXX} 占位符 ——
+    // 若用 getConfig() (已解析), 会把明文 key 甚至字面量 "***set***" 写回配置文件
+    const raw = getRawConfig()
     const restored = {
       ...parsed.data,
       providers: parsed.data.providers.map((p) => {
-        const cur = current.providers.find((cp) => cp.id === p.id)
-        if (p.apiKey === '***set***' && cur?.apiKey) {
+        const cur = raw.providers.find((cp) => cp.id === p.id)
+        // 未改动的 key (掩码或空串) 一律沿用磁盘原值
+        if ((p.apiKey === '***set***' || p.apiKey === '') && cur?.apiKey) {
           return { ...p, apiKey: cur.apiKey }
         }
         return p
       }),
     } as LlmConfig
     saveConfig(restored)
-    res.json(sanitizeConfig(getConfig()))
+    res.json(sanitizedResponse())
   } catch (err) {
     res
       .status(500)
@@ -123,9 +134,9 @@ llmRouter.put('/defaults', (req, res) => {
     return
   }
   try {
-    const cfg = getConfig()
+    const cfg = getRawConfig()
     saveConfig({ ...cfg, defaults: parsed.data })
-    res.json(sanitizeConfig(getConfig()))
+    res.json(sanitizedResponse())
   } catch (err) {
     res
       .status(500)
@@ -150,9 +161,9 @@ llmRouter.put('/role-mapping', (req, res) => {
     return
   }
   try {
-    const cfg = getConfig()
+    const cfg = getRawConfig()
     saveConfig({ ...cfg, roleMapping: parsed.data as Record<LlmRole, string> })
-    res.json(sanitizeConfig(getConfig()))
+    res.json(sanitizedResponse())
   } catch (err) {
     res
       .status(500)
@@ -205,14 +216,14 @@ llmRouter.put('/providers/:id/models', (req, res) => {
     return
   }
   try {
-    const cfg = getConfig()
+    const cfg = getRawConfig()
     saveConfig({
       ...cfg,
       providers: cfg.providers.map((p) =>
         p.id === req.params.id ? { ...p, models: parsed.data.models } : p,
       ),
     })
-    res.json(sanitizeConfig(getConfig()))
+    res.json(sanitizedResponse())
   } catch (err) {
     res
       .status(500)

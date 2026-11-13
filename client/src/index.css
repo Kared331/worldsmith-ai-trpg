@@ -68,6 +68,19 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /* 羊皮纸 + 暗角背景 — 营造 RPG 古老书桌氛围
+       多层叠加: 暖黑底色 + 极弱羊皮纸纹理 + 四周暗角 + 顶部炉火光晕 */
+    background-color: hsl(var(--background));
+    background-image:
+      /* 顶部炉火暖光晕 (从上方洒下的火光) */
+      radial-gradient(ellipse 80% 50% at 50% 0%, hsl(32 80% 30% / 0.12) 0%, transparent 60%),
+      /* 四周暗角 (古老书桌的阴影感) */
+      radial-gradient(ellipse 100% 80% at 50% 50%, transparent 40%, hsl(20 14% 2% / 0.6) 100%),
+      /* 微弱羊皮纸噪点纹理 (SVG 内联, 极低不透明度) */
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.85 0 0 0 0 0.7 0 0 0 0 0.5 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-attachment: fixed;
+    background-size: cover, cover, 200px 200px;
+    background-repeat: no-repeat, no-repeat, repeat;
   }
   /* 滚动条 — 暖调极简 */
   ::-webkit-scrollbar {
@@ -88,4 +101,22 @@
   ::selection {
     background: hsl(32 95% 44% / 0.3);
   }
+}
+
+/* ============================================================
+   消息渐入动画 — 对标 ChatBox 的丝滑体验
+   ============================================================ */
+@keyframes msgFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.msg-fade-in {
+  animation: msgFadeIn 0.25s ease-out;
 }

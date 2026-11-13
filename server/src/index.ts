@@ -1,9 +1,11 @@
 import 'dotenv/config'
+// 必须在 db/index.js 之前: 打开数据库前先应用待恢复的备份
+import './lib/pending-restore.js'
 import express from 'express'
 import cors from 'cors'
 import path from 'node:path'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
-import { db, ensureDefaultWorld } from './db/index.js'
+import { db, ensureDefaultWorld, runRuntimeMigrations } from './db/index.js'
 import { charactersRouter } from './routes/characters.js'
 import { conversationsRouter } from './routes/conversations.js'
 import { chatRouter } from './routes/chat.js'
@@ -18,15 +20,17 @@ import { characterStateRouter } from './routes/character-state.js'
 import { worldsRouter } from './routes/worlds.js'
 import { personasRouter } from './routes/personas.js'
 import { rulesRouter } from './routes/rules.js'
+import { systemRouter } from './routes/system.js'
 import { worldContextMiddleware } from './lib/world-context.js'
 import { errorHandler } from './lib/http-error.js'
 
 // 启动时自动执行迁移 (幂等)
 migrate(db, { migrationsFolder: path.resolve(process.cwd(), 'drizzle') })
+// 运行时列迁移必须在 drizzle migrate 之后 (表已建好)
+runRuntimeMigrations()
 // 迁移后确保默认世界存在, 旧数据归入默认世界
-ensureDefaultWorld().catch((err) => {
-  console.error('[db] ensureDefaultWorld failed:', err)
-})
+// 必须在 listen 之前 await: 否则首个请求可能先到, 触发 world_id 外键失败
+await ensureDefaultWorld()
 
 const app = express()
 app.use(cors())
@@ -53,6 +57,7 @@ app.use('/api/player-state', playerStateRouter)
 app.use('/api/character-state', characterStateRouter)
 app.use('/api/personas', personasRouter)
 app.use('/api/rules', rulesRouter)
+app.use('/api/system', systemRouter)
 
 // 全局错误处理 (必须注册在所有路由之后)
 app.use(errorHandler)

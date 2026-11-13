@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, User, ScrollText, Map as MapIcon, X } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, User, ScrollText, Map as MapIcon, BookOpen, X } from 'lucide-react'
 import { useAppStore } from './store/appStore'
 import { MapPanel } from './components/MapPanel'
 import { CharacterPanel } from './components/CharacterPanel'
@@ -9,6 +9,7 @@ import { LlmConfigPanel } from './components/LlmConfigPanel'
 import { WorldSwitcher } from './components/WorldSwitcher'
 import { PersonaDialog } from './components/PersonaDialog'
 import { WorldRulesDialog } from './components/WorldRulesDialog'
+import { LoreDialog } from './components/LoreDialog'
 import { Dialog } from './components/ui/Dialog'
 import { Toaster } from './components/ui/Toast'
 import { Button } from './components/ui/Button'
@@ -33,6 +34,7 @@ export default function App() {
   const [showLeft, setShowLeft] = useState(true)
   const [showRight, setShowRight] = useState(true)
   const [mapOpen, setMapOpen] = useState(false)
+  const [loreOpen, setLoreOpen] = useState(false)
 
   // 首次加载世界列表 (loadWorlds 内部会选定默认世界并同步 header)
   useEffect(() => {
@@ -103,6 +105,17 @@ export default function App() {
           >
             <ScrollText className="size-3.5" />
             {worldRules.length > 0 ? `${worldRules.length}` : '规则'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+            onClick={() => setLoreOpen(true)}
+            aria-label="世界知识"
+            title="世界知识"
+          >
+            <BookOpen className="size-3.5" />
+            知识
           </Button>
           <Button
             variant="ghost"
@@ -201,6 +214,7 @@ export default function App() {
 
       {/* 世界规则编辑器 */}
       <WorldRulesDialog />
+      <LoreDialog open={loreOpen} onOpenChange={setLoreOpen} />
     </div>
   )
 }
